@@ -1,89 +1,48 @@
-import EditorHeader from './EditorHeader'
-import MediaBinPanel from './MediaBinPanel'
-import PlayerPanel from './PlayerPanel'
-import RightPanel from './RightPanel'
-import TimelinePanel from './TimelinePanel'
-import { useEditorState } from '../hooks/useEditorState'
-import { formatClipTime } from '../mock/format'
+import { useEffect, useState } from 'react'
+import type { Project } from '@shared/types'
+import EditorWorkspace from './EditorWorkspace'
 
 interface EditorScreenProps {
-  projectName: string
-  isDemo: boolean
+  projectId: string
   onBack: () => void
 }
 
-function EditorScreen({ projectName, isDemo, onBack }: EditorScreenProps): React.JSX.Element {
-  const state = useEditorState({ demo: isDemo })
+function EditorScreen({ projectId, onBack }: EditorScreenProps): React.JSX.Element {
+  const [project, setProject] = useState<Project | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const clipCountLabel = `${state.timelineClips.length} ${
-    state.timelineClips.length === 1 ? 'clip' : 'clips'
-  }`
+  useEffect(() => {
+    let cancelled = false
+    window.api.loadProject(projectId).then(
+      (loaded) => {
+        if (!cancelled) setProject(loaded)
+      },
+      (err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      }
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
 
-  return (
-    <div className="editor">
-      <EditorHeader
-        projectName={projectName}
-        onBack={onBack}
-        exportPhase={state.exportPhase}
-        exportPercent={state.exportPercent}
-        onExport={state.runExport}
-        onResetExport={state.resetExport}
-      />
-
-      <div className="editor__body">
-        <MediaBinPanel
-          items={state.mediaBin}
-          draggingBinId={state.draggingBinId}
-          onImportClip={state.importClip}
-          onDragStart={state.setDraggingBinId}
-          onDragEnd={() => state.setDraggingBinId(null)}
-          onAddToTimeline={state.addBinItemToTimeline}
-        />
-
-        <div className="editor__center">
-          <PlayerPanel
-            currentSec={state.currentSec}
-            totalDurationSec={state.totalDurationSec}
-            isPlaying={state.isPlaying}
-            clipLabel={state.clipLabelForTime(state.currentSec)}
-            onTogglePlay={state.togglePlay}
-            onScrub={state.onScrub}
-          />
-
-          <TimelinePanel
-            clips={state.timelineClips}
-            selectedClipIds={state.selectedClipIds}
-            draggingClipId={state.draggingClipId}
-            dragOverClipId={state.dragOverClipId}
-            fadeJunctions={state.fadeJunctions}
-            normalizedIds={state.normalizedIds}
-            clipCountLabel={clipCountLabel}
-            totalDurationLabel={formatClipTime(state.totalDurationSec)}
-            onSelectClip={state.toggleClipSelection}
-            onClipDragStart={state.setDraggingClipId}
-            onClipDragOver={state.setDragOverClipId}
-            onClipDrop={(targetId) => {
-              if (state.draggingClipId) state.reorderClips(state.draggingClipId, targetId)
-              state.setDraggingClipId(null)
-              state.setDragOverClipId(null)
-            }}
-            onClipDragEnd={() => {
-              state.setDraggingClipId(null)
-              state.setDragOverClipId(null)
-            }}
-            onTimelineDrop={() => {
-              if (state.draggingBinId) {
-                state.addBinItemToTimeline(state.draggingBinId)
-                state.setDraggingBinId(null)
-              }
-            }}
-          />
-        </div>
-
-        <RightPanel {...state} />
+  if (error) {
+    return (
+      <div className="editor-status">
+        <p>Couldn&apos;t load this project.</p>
+        <p className="editor-status__detail">{error}</p>
+        <button className="btn btn--ghost" onClick={onBack}>
+          Back to projects
+        </button>
       </div>
-    </div>
-  )
+    )
+  }
+
+  if (!project) {
+    return <div className="editor-status">Loading project…</div>
+  }
+
+  return <EditorWorkspace project={project} onBack={onBack} />
 }
 
 export default EditorScreen

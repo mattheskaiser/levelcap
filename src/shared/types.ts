@@ -15,32 +15,38 @@ export interface Clip {
 
 export interface CaptionSegment {
   id: string
-  clipId: string
+  /** Timeline-absolute seconds (not per-clip — see PLAN.md open question on caption timing model). */
   startSec: number
   endSec: number
   text: string
 }
 
-export interface MusicTrack {
-  id: string
-  name: string
-  /** Absolute path; either a bundled track or a user-uploaded MP3. */
-  filePath: string
-  isBundled: boolean
-}
-
 export interface ProjectSettings {
-  fadeTransitionsEnabled: boolean
-  normalizeAudio: boolean
-  musicTrackId: string | null
-  musicVolumeDb: number
+  /** "<clipIdA>__<clipIdB>" keys where a fade-to-black is applied between adjacent timeline clips. */
+  fadeJunctions: string[]
+  /** Clip ids that have been through the loudnorm pass. */
+  normalizedClipIds: string[]
 }
 
 export interface Project {
   id: string
-  clips: Clip[]
+  name: string
+  /** ISO 8601 timestamps, set by the main process. */
+  createdAt: string
+  updatedAt: string
+  /** Imported but not yet placed on the timeline. */
+  mediaBinClips: Clip[]
+  timelineClips: Clip[]
   captions: CaptionSegment[]
   settings: ProjectSettings
+}
+
+export interface ProjectSummary {
+  id: string
+  name: string
+  updatedAt: string
+  clipCount: number
+  totalDurationSec: number
 }
 
 export type ExportProgressEvent =

@@ -1,16 +1,43 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { initialCaptions, initialMediaBin, initialTimelineClips, initialTracks } from '../mock/data'
-import { junctionKey } from '../mock/format'
+import type { CaptionSegment, Clip, Project } from '@shared/types'
+import { initialTracks } from '../mock/data'
 import type {
   ExportPhase,
-  MockCaption,
-  MockClip,
   MockTrack,
   MockUploadedTrack,
   MusicTab,
   NormalizeStatus,
-  RightTab
+  RightTab,
+  SaveStatus
 } from '../mock/types'
+import type { DisplayClip } from '../types'
+import { junctionKey, toDisplayClip } from '../utils/format'
+
+const MAX_HISTORY = 50
+const AUTOSAVE_DELAY_MS = 800
+
+/** The persisted, undoable part of a project — everything else here is ephemeral UI state. */
+interface DocState {
+  mediaBinClips: Clip[]
+  timelineClips: Clip[]
+  captions: CaptionSegment[]
+  fadeJunctions: string[]
+  normalizedClipIds: string[]
+}
+
+function docFromProject(project: Project): DocState {
+  return {
+    mediaBinClips: project.mediaBinClips,
+    timelineClips: project.timelineClips,
+    captions: project.captions,
+    fadeJunctions: project.settings.fadeJunctions,
+    normalizedClipIds: project.settings.normalizedClipIds
+  }
+}
+
+function reindexOrder(clips: Clip[]): Clip[] {
+  return clips.map((c, i) => ({ ...c, order: i }))
+}
 
 interface ExportEngine {
   phase: ExportPhase
@@ -18,9 +45,13 @@ interface ExportEngine {
   clipIdx: number
 }
 
+export interface UseEditorStateOptions {
+  project: Project
+}
+
 export interface EditorState {
-  mediaBin: MockClip[]
-  timelineClips: MockClip[]
+  mediaBin: DisplayClip[]
+  timelineClips: DisplayClip[]
   draggingBinId: string | null
   draggingClipId: string | null
   dragOverClipId: string | null
@@ -38,7 +69,7 @@ export interface EditorState {
   uploadedTrack: MockUploadedTrack | null
   uploadIsSelected: boolean
   previewingUpload: boolean
-  captions: MockCaption[]
+  captions: CaptionSegment[]
   editingCaptionId: string | null
   editDraft: string
   isPlaying: boolean
@@ -46,6 +77,11 @@ export interface EditorState {
   exportPhase: ExportPhase
   exportPercent: number
   totalDurationSec: number
+  saveStatus: SaveStatus
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => void
+  redo: () => void
   clipLabelForTime: (t: number) => string
   importClip: () => void
   addBinItemToTimeline: (binId: string) => void
@@ -74,15 +110,12 @@ export interface EditorState {
   resetExport: () => void
 }
 
-export interface UseEditorStateOptions {
-  /** Seed the editor with the bundled demo footage/captions instead of starting blank. */
-  demo: boolean
-}
+export function useEditorState({ project }: UseEditorStateOptions): EditorState {
+  const [doc, setDocRaw] = useState<DocState>(() => docFromProject(project))
+  const docRef = useRef(doc)
 
-export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
-  const [mediaBin, setMediaBin] = useState(demo ? initialMediaBin : [])
-  const [timelineClips, setTimelineClips] = useState(demo ? initialTimelineClips : [])
-  const [nextImportN, setNextImportN] = useState(41)
+  const [undoStack, setUndoStack] = useState<DocState[]>([])
+  const [redoStack, setRedoStack] = useState<DocState[]>([])
 
   const [draggingBinId, setDraggingBinId] = useState<string | null>(null)
   const [draggingClipId, setDraggingClipId] = useState<string | null>(null)
@@ -91,8 +124,6 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
 
   const [activeRightTab, setActiveRightTab] = useState<RightTab>('captions')
 
-  const [fadeJunctions, setFadeJunctions] = useState<string[]>([])
-  const [normalizedIds, setNormalizedIds] = useState<string[]>([])
   const [normalizeStatus, setNormalizeStatus] = useState<NormalizeStatus>('idle')
 
   const [musicTab, setMusicTab] = useState<MusicTab>('library')
@@ -103,7 +134,6 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   const [uploadIsSelected, setUploadIsSelected] = useState(false)
   const [previewingUpload, setPreviewingUpload] = useState(false)
 
-  const [captions, setCaptions] = useState(demo ? initialCaptions : [])
   const [editingCaptionId, setEditingCaptionId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
 
@@ -113,69 +143,151 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   const [exportPhase, setExportPhase] = useState<ExportPhase>(null)
   const [exportPercent, setExportPercent] = useState(0)
 
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+
   const normalizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const exportTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const exportEngineRef = useRef<ExportEngine>({ phase: null, percent: 0, clipIdx: 0 })
   const playTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const totalDurationRef = useRef(0)
+  const isFirstDocEffectRef = useRef(true)
 
-  const totalDurationSec = timelineClips.reduce((acc, c) => acc + c.durationSec, 0)
+  const totalDurationSec = doc.timelineClips.reduce(
+    (acc, c) => acc + (c.trimEndSec - c.trimStartSec),
+    0
+  )
 
   useEffect(() => {
     totalDurationRef.current = totalDurationSec
   }, [totalDurationSec])
+
+  function buildProjectPayload(d: DocState): Project {
+    return {
+      id: project.id,
+      name: project.name,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+      mediaBinClips: d.mediaBinClips,
+      timelineClips: d.timelineClips,
+      captions: d.captions,
+      settings: {
+        fadeJunctions: d.fadeJunctions,
+        normalizedClipIds: d.normalizedClipIds
+      }
+    }
+  }
+
+  // Autosave: debounce writes to disk whenever the document changes.
+  useEffect(() => {
+    if (isFirstDocEffectRef.current) {
+      isFirstDocEffectRef.current = false
+      return
+    }
+    setSaveStatus('saving')
+    clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      window.api.saveProject(buildProjectPayload(docRef.current)).then(
+        () => setSaveStatus('saved'),
+        () => setSaveStatus('error')
+      )
+    }, AUTOSAVE_DELAY_MS)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc])
 
   useEffect(() => {
     return (): void => {
       clearTimeout(normalizeTimerRef.current)
       clearInterval(exportTimerRef.current)
       clearInterval(playTimerRef.current)
+      clearTimeout(saveTimerRef.current)
+      void window.api.saveProject(buildProjectPayload(docRef.current))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  function commitDoc(next: DocState): void {
+    const prev = docRef.current
+    setUndoStack((u) => [...u, prev].slice(-MAX_HISTORY))
+    setRedoStack([])
+    docRef.current = next
+    setDocRaw(next)
+  }
+
+  function undo(): void {
+    const prevDoc = undoStack[undoStack.length - 1]
+    if (!prevDoc) return
+    setRedoStack((r) => [...r, docRef.current])
+    setUndoStack((u) => u.slice(0, -1))
+    docRef.current = prevDoc
+    setDocRaw(prevDoc)
+  }
+
+  function redo(): void {
+    const nextDoc = redoStack[redoStack.length - 1]
+    if (!nextDoc) return
+    setUndoStack((u) => [...u, docRef.current])
+    setRedoStack((r) => r.slice(0, -1))
+    docRef.current = nextDoc
+    setDocRaw(nextDoc)
+  }
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent): void {
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      const isEditableTarget = tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable
+      const mod = e.ctrlKey || e.metaKey
+      if (!mod || e.key.toLowerCase() !== 'z' || isEditableTarget) return
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  })
 
   function clipLabelForTime(t: number): string {
     let acc = 0
-    for (let i = 0; i < timelineClips.length; i++) {
-      const c = timelineClips[i]
+    for (let i = 0; i < doc.timelineClips.length; i++) {
+      const c = doc.timelineClips[i]
       if (!c) continue
-      if (t >= acc && t < acc + c.durationSec) return `Clip ${i + 1}`
-      acc += c.durationSec
+      const dur = c.trimEndSec - c.trimStartSec
+      if (t >= acc && t < acc + dur) return `Clip ${i + 1}`
+      acc += dur
     }
-    return timelineClips.length ? `Clip ${timelineClips.length}` : '—'
+    return doc.timelineClips.length ? `Clip ${doc.timelineClips.length}` : '—'
   }
 
   function importClip(): void {
-    const n = nextImportN
-    const newClip: MockClip = {
-      id: `b${Date.now()}`,
-      name: `IMG_48${n}.MOV`,
-      durationSec: +(6 + Math.random() * 18).toFixed(1),
-      seed: n
-    }
-    setMediaBin((prev) => [...prev, newClip])
-    setNextImportN(n + 1)
+    void (async (): Promise<void> => {
+      const imported = await window.api.selectAndImportClips()
+      if (imported.length === 0) return
+      commitDoc({ ...doc, mediaBinClips: [...doc.mediaBinClips, ...imported] })
+    })()
   }
 
   function addBinItemToTimeline(binId: string): void {
-    const item = mediaBin.find((b) => b.id === binId)
+    const item = doc.mediaBinClips.find((b) => b.id === binId)
     if (!item) return
-    setMediaBin((prev) => prev.filter((b) => b.id !== binId))
-    setTimelineClips((prev) => [...prev, item])
+    commitDoc({
+      ...doc,
+      mediaBinClips: doc.mediaBinClips.filter((b) => b.id !== binId),
+      timelineClips: reindexOrder([...doc.timelineClips, item])
+    })
   }
 
   function reorderClips(draggedId: string, targetId: string): void {
     if (draggedId === targetId) return
-    setTimelineClips((prev) => {
-      const clips = [...prev]
-      const from = clips.findIndex((c) => c.id === draggedId)
-      const to = clips.findIndex((c) => c.id === targetId)
-      if (from < 0 || to < 0) return prev
-      const item = clips[from]
-      if (!item) return prev
-      clips.splice(from, 1)
-      clips.splice(to, 0, item)
-      return clips
-    })
+    const clips = [...doc.timelineClips]
+    const from = clips.findIndex((c) => c.id === draggedId)
+    const to = clips.findIndex((c) => c.id === targetId)
+    if (from < 0 || to < 0) return
+    const item = clips[from]
+    if (!item) return
+    clips.splice(from, 1)
+    clips.splice(to, 0, item)
+    commitDoc({ ...doc, timelineClips: reindexOrder(clips) })
   }
 
   function toggleClipSelection(id: string): void {
@@ -183,12 +295,12 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   }
 
   function runNormalize(): void {
-    const scope = selectedClipIds.length ? selectedClipIds : timelineClips.map((c) => c.id)
+    const scope = selectedClipIds.length ? selectedClipIds : doc.timelineClips.map((c) => c.id)
     clearTimeout(normalizeTimerRef.current)
     setNormalizeStatus('running')
     normalizeTimerRef.current = setTimeout(() => {
       setNormalizeStatus('done')
-      setNormalizedIds(scope)
+      commitDoc({ ...docRef.current, normalizedClipIds: scope })
     }, 1300)
   }
 
@@ -220,8 +332,8 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
     if (selectedClipIds.length !== 2) return [null, null]
     const [selA, selB] = selectedClipIds
     if (!selA || !selB) return [null, null]
-    const idxA = timelineClips.findIndex((c) => c.id === selA)
-    const idxB = timelineClips.findIndex((c) => c.id === selB)
+    const idxA = doc.timelineClips.findIndex((c) => c.id === selA)
+    const idxB = doc.timelineClips.findIndex((c) => c.id === selB)
     if (idxA < 0 || idxB < 0 || Math.abs(idxA - idxB) !== 1) return [null, null]
     return idxA < idxB ? [selA, selB] : [selB, selA]
   }
@@ -230,13 +342,14 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
     const [a, b] = orderedSelectedPair()
     if (!a || !b) return
     const key = junctionKey(a, b)
-    setFadeJunctions((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
-    )
+    const fadeJunctions = doc.fadeJunctions.includes(key)
+      ? doc.fadeJunctions.filter((k) => k !== key)
+      : [...doc.fadeJunctions, key]
+    commitDoc({ ...doc, fadeJunctions })
   }
 
   function removeFade(key: string): void {
-    setFadeJunctions((prev) => prev.filter((k) => k !== key))
+    commitDoc({ ...doc, fadeJunctions: doc.fadeJunctions.filter((k) => k !== key) })
   }
 
   function startEditCaption(id: string, currentText: string): void {
@@ -249,7 +362,8 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   }
 
   function commitCaptionEdit(id: string): void {
-    setCaptions((prev) => prev.map((c) => (c.id === id ? { ...c, text: editDraft } : c)))
+    const captions = doc.captions.map((c) => (c.id === id ? { ...c, text: editDraft } : c))
+    commitDoc({ ...doc, captions })
     setEditingCaptionId(null)
   }
 
@@ -258,15 +372,14 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   }
 
   function adjustCaptionTime(id: string, field: 'startSec' | 'endSec', delta: number): void {
-    setCaptions((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c
-        let v = Math.max(0, +(c[field] + delta).toFixed(1))
-        if (field === 'startSec') v = Math.min(v, c.endSec - 0.1)
-        if (field === 'endSec') v = Math.max(v, c.startSec + 0.1)
-        return { ...c, [field]: v }
-      })
-    )
+    const captions = doc.captions.map((c) => {
+      if (c.id !== id) return c
+      let v = Math.max(0, +(c[field] + delta).toFixed(1))
+      if (field === 'startSec') v = Math.min(v, c.endSec - 0.1)
+      if (field === 'endSec') v = Math.max(v, c.startSec + 0.1)
+      return { ...c, [field]: v }
+    })
+    commitDoc({ ...doc, captions })
   }
 
   function togglePlay(): void {
@@ -294,7 +407,7 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   }
 
   function runExport(): void {
-    const totalClips = timelineClips.length || 1
+    const totalClips = doc.timelineClips.length || 1
     exportEngineRef.current = { phase: 'normalizing', percent: 0, clipIdx: 0 }
     setExportPhase('normalizing')
     setExportPercent(0)
@@ -340,16 +453,16 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
   }
 
   return {
-    mediaBin,
-    timelineClips,
+    mediaBin: doc.mediaBinClips.map(toDisplayClip),
+    timelineClips: doc.timelineClips.map(toDisplayClip),
     draggingBinId,
     draggingClipId,
     dragOverClipId,
     selectedClipIds,
     activeRightTab,
     setActiveRightTab,
-    fadeJunctions,
-    normalizedIds,
+    fadeJunctions: doc.fadeJunctions,
+    normalizedIds: doc.normalizedClipIds,
     normalizeStatus,
     musicTab,
     setMusicTab,
@@ -359,7 +472,7 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
     uploadedTrack,
     uploadIsSelected,
     previewingUpload,
-    captions,
+    captions: doc.captions,
     editingCaptionId,
     editDraft,
     isPlaying,
@@ -367,6 +480,11 @@ export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
     exportPhase,
     exportPercent,
     totalDurationSec,
+    saveStatus,
+    canUndo: undoStack.length > 0,
+    canRedo: redoStack.length > 0,
+    undo,
+    redo,
     clipLabelForTime,
     importClip,
     addBinItemToTimeline,

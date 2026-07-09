@@ -1,8 +1,8 @@
-import { formatClipTime, junctionKey, waveformPath } from '../mock/format'
-import type { MockClip } from '../mock/types'
+import type { DisplayClip } from '../types'
+import { formatClipTime, junctionKey, waveformPath } from '../utils/format'
 
 interface TimelinePanelProps {
-  clips: MockClip[]
+  clips: DisplayClip[]
   selectedClipIds: string[]
   draggingClipId: string | null
   dragOverClipId: string | null
@@ -90,7 +90,7 @@ function TimelinePanel({
                 <div className="timeline-clip__waveform">
                   <svg width="100%" height="34" viewBox="0 0 140 34" preserveAspectRatio="none">
                     <path
-                      d={waveformPath(clip.seed)}
+                      d={waveformPath(clip.id)}
                       stroke="rgba(255,255,255,0.5)"
                       strokeWidth="2"
                       fill="none"
@@ -99,7 +99,9 @@ function TimelinePanel({
                 </div>
                 <div>
                   <div className="timeline-clip__name">{clip.name}</div>
-                  <div className="timeline-clip__duration">{formatClipTime(clip.durationSec)}</div>
+                  <div className="timeline-clip__duration">
+                    {formatClipTime(clip.trimEndSec - clip.trimStartSec)}
+                  </div>
                 </div>
               </div>
 

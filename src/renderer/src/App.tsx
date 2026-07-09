@@ -1,36 +1,35 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import EditorScreen from './components/EditorScreen'
 import HomeScreen from './components/HomeScreen'
-import { initialProjects } from './mock/projects'
-import type { MockProject } from './mock/projects'
+import type { ProjectSummary } from '@shared/types'
 
 type View = { screen: 'home' } | { screen: 'editor'; projectId: string }
 
-let untitledCount = 0
-
 function App(): React.JSX.Element {
-  const [projects, setProjects] = useState<MockProject[]>(initialProjects)
+  const [projects, setProjects] = useState<ProjectSummary[] | null>(null)
   const [view, setView] = useState<View>({ screen: 'home' })
+
+  const refreshProjects = useCallback(() => {
+    void window.api.listProjects().then(setProjects)
+  }, [])
+
+  useEffect(() => {
+    refreshProjects()
+  }, [refreshProjects])
+
+  async function handleCreateProject(): Promise<void> {
+    const name = `Untitled Project ${(projects?.length ?? 0) + 1}`
+    const project = await window.api.createProject(name)
+    refreshProjects()
+    setView({ screen: 'editor', projectId: project.id })
+  }
 
   function handleOpenProject(id: string): void {
     setView({ screen: 'editor', projectId: id })
   }
 
-  function handleCreateProject(): void {
-    untitledCount += 1
-    const newProject: MockProject = {
-      id: `proj-${Date.now()}`,
-      name: `Untitled Project ${untitledCount}`,
-      clipCount: 0,
-      durationLabel: '0:00',
-      updatedLabel: 'Just now',
-      seed: Math.floor(Math.random() * 90) + 1
-    }
-    setProjects((prev) => [...prev, newProject])
-    setView({ screen: 'editor', projectId: newProject.id })
-  }
-
   function handleBack(): void {
+    refreshProjects()
     setView({ screen: 'home' })
   }
 
@@ -39,21 +38,12 @@ function App(): React.JSX.Element {
       <HomeScreen
         projects={projects}
         onOpenProject={handleOpenProject}
-        onCreateProject={handleCreateProject}
+        onCreateProject={() => void handleCreateProject()}
       />
     )
   }
 
-  const project = projects.find((p) => p.id === view.projectId)
-
-  return (
-    <EditorScreen
-      key={view.projectId}
-      projectName={project?.name ?? 'Untitled'}
-      isDemo={project?.isDemo ?? false}
-      onBack={handleBack}
-    />
-  )
+  return <EditorScreen key={view.projectId} projectId={view.projectId} onBack={handleBack} />
 }
 
 export default App

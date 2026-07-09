@@ -1,8 +1,8 @@
-import { formatCaptionTime } from '../mock/format'
-import type { MockCaption } from '../mock/types'
+import type { CaptionSegment } from '@shared/types'
+import { formatCaptionTime } from '../utils/format'
 
 interface CaptionsTabProps {
-  captions: MockCaption[]
+  captions: CaptionSegment[]
   editingCaptionId: string | null
   editDraft: string
   clipLabelForTime: (t: number) => string

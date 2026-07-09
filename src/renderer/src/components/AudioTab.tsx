@@ -1,15 +1,10 @@
 import ClipPickerList from './ClipPickerList'
-import { formatClipTime } from '../mock/format'
-import type {
-  MockClip,
-  MockTrack,
-  MockUploadedTrack,
-  MusicTab,
-  NormalizeStatus
-} from '../mock/types'
+import type { MockTrack, MockUploadedTrack, MusicTab, NormalizeStatus } from '../mock/types'
+import type { DisplayClip } from '../types'
+import { formatClipTime } from '../utils/format'
 
 interface AudioTabProps {
-  clips: MockClip[]
+  clips: DisplayClip[]
   selectedClipIds: string[]
   onToggleClipSelection: (id: string) => void
   normalizeStatus: NormalizeStatus

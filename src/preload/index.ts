@@ -6,7 +6,11 @@ import type { RushcutApi } from '@shared/ipc'
 const api: RushcutApi = {
   selectAndImportClips: () => ipcRenderer.invoke('clips:import:dialog'),
   importClipsFromPaths: (filePaths) => ipcRenderer.invoke('clips:import', filePaths),
-  getPathForFile: (file) => webUtils.getPathForFile(file)
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  listProjects: () => ipcRenderer.invoke('projects:list'),
+  createProject: (name) => ipcRenderer.invoke('projects:create', name),
+  loadProject: (id) => ipcRenderer.invoke('projects:load', id),
+  saveProject: (project) => ipcRenderer.invoke('projects:save', project)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

@@ -101,6 +101,16 @@ button {
   color: #fff;
 }
 
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.icon-btn:disabled:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ev-c-text-1);
+}
+
 /* Layout */
 
 .editor {
@@ -157,6 +167,31 @@ button {
   font-size: 13px;
   color: var(--ev-c-text-3);
   margin-left: 2px;
+}
+
+.editor-header__save-status {
+  font-size: 11.5px;
+  color: var(--ev-c-text-3);
+  margin-left: 4px;
+}
+
+.editor-header__save-status--saved {
+  color: var(--success);
+}
+
+.editor-header__save-status--error {
+  color: var(--danger);
+}
+
+.editor-header__right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.editor-header__history {
+  display: flex;
+  gap: 4px;
 }
 
 .editor-header__progress {
@@ -1048,4 +1083,23 @@ button {
 .project-card__new-icon {
   font-size: 20px;
   color: var(--accent);
+}
+
+/* Editor loading/error screen */
+
+.editor-status {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--ev-c-text-2);
+  font-size: 13px;
+}
+
+.editor-status__detail {
+  color: var(--ev-c-text-3);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
 }

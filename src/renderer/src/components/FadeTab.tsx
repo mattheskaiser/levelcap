@@ -1,9 +1,9 @@
 import ClipPickerList from './ClipPickerList'
-import { junctionKey } from '../mock/format'
-import type { MockClip } from '../mock/types'
+import type { DisplayClip } from '../types'
+import { junctionKey } from '../utils/format'
 
 interface FadeTabProps {
-  clips: MockClip[]
+  clips: DisplayClip[]
   selectedClipIds: string[]
   onToggleClipSelection: (id: string) => void
   orderedSelectedPair: () => [string, string] | [null, null]

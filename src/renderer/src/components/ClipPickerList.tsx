@@ -1,8 +1,8 @@
-import { formatClipTime } from '../mock/format'
-import type { MockClip } from '../mock/types'
+import type { DisplayClip } from '../types'
+import { formatClipTime } from '../utils/format'
 
 interface ClipPickerListProps {
-  clips: MockClip[]
+  clips: DisplayClip[]
   selectedClipIds: string[]
   onToggle: (id: string) => void
 }
@@ -26,7 +26,9 @@ function ClipPickerList({
               {isSelected ? '✓' : ''}
             </span>
             <span className="clip-picker__name">{clip.name}</span>
-            <span className="clip-picker__duration mono">{formatClipTime(clip.durationSec)}</span>
+            <span className="clip-picker__duration mono">
+              {formatClipTime(clip.trimEndSec - clip.trimStartSec)}
+            </span>
           </div>
         )
       })}

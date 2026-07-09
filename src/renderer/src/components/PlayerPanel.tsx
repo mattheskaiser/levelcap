@@ -1,4 +1,4 @@
-import { formatClipTime } from '../mock/format'
+import { formatClipTime } from '../utils/format'
 
 interface PlayerPanelProps {
   currentSec: number

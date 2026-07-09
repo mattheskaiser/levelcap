@@ -1,8 +1,8 @@
-import { formatClipTime } from '../mock/format'
-import type { MockClip } from '../mock/types'
+import type { DisplayClip } from '../types'
+import { formatClipTime } from '../utils/format'
 
 interface MediaBinPanelProps {
-  items: MockClip[]
+  items: DisplayClip[]
   draggingBinId: string | null
   onImportClip: () => void
   onDragStart: (id: string) => void

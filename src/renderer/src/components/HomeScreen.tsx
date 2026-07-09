@@ -1,8 +1,8 @@
 import ProjectCard from './ProjectCard'
-import type { MockProject } from '../mock/projects'
+import type { ProjectSummary } from '@shared/types'
 
 interface HomeScreenProps {
-  projects: MockProject[]
+  projects: ProjectSummary[] | null
   onOpenProject: (id: string) => void
   onCreateProject: () => void
 }
@@ -32,22 +32,22 @@ function HomeScreen({
           </button>
         </div>
 
-        <div className="home__grid">
-          {projects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onOpen={() => onOpenProject(project.id)}
-            />
-          ))}
-          <button className="project-card project-card--new" onClick={onCreateProject}>
-            <span className="project-card__new-icon">+</span>
-            New Project
-          </button>
-        </div>
+        {projects === null && <p className="home__empty">Loading your projects…</p>}
 
-        {projects.length === 0 && (
-          <p className="home__empty">No projects yet — create one to get started.</p>
+        {projects !== null && (
+          <div className="home__grid">
+            {projects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onOpen={() => onOpenProject(project.id)}
+              />
+            ))}
+            <button className="project-card project-card--new" onClick={onCreateProject}>
+              <span className="project-card__new-icon">+</span>
+              New Project
+            </button>
+          </div>
         )}
       </div>
     </div>
