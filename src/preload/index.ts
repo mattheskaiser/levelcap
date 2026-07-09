@@ -1,8 +1,13 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { RushcutApi } from '@shared/ipc'
 
 // Custom APIs for renderer
-const api = {}
+const api: RushcutApi = {
+  selectAndImportClips: () => ipcRenderer.invoke('clips:import:dialog'),
+  importClipsFromPaths: (filePaths) => ipcRenderer.invoke('clips:import', filePaths),
+  getPathForFile: (file) => webUtils.getPathForFile(file)
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
