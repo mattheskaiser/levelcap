@@ -6,7 +6,13 @@ const PHASE_LABELS: Record<Exclude<ExportPhase, null | 'done'>, string> = {
   rendering: 'Rendering video…'
 }
 
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, '-') || 'untitled'
+}
+
 interface EditorHeaderProps {
+  projectName: string
+  onBack: () => void
   exportPhase: ExportPhase
   exportPercent: number
   onExport: () => void
@@ -14,6 +20,8 @@ interface EditorHeaderProps {
 }
 
 function EditorHeader({
+  projectName,
+  onBack,
   exportPhase,
   exportPercent,
   onExport,
@@ -22,9 +30,12 @@ function EditorHeader({
   return (
     <header className="editor-header">
       <div className="editor-header__brand">
+        <button className="icon-btn" onClick={onBack} title="Back to projects">
+          ←
+        </button>
         <div className="editor-header__logo" />
         <span className="editor-header__title">Rushcut</span>
-        <span className="editor-header__project">/ trip-edit</span>
+        <span className="editor-header__project">/ {projectName}</span>
       </div>
 
       {exportPhase === null && (
@@ -49,7 +60,9 @@ function EditorHeader({
             <span className="editor-header__done-check">✓</span>
             Exported
           </span>
-          <span className="editor-header__done-path">~/Movies/Rushcut/trip-edit.mp4</span>
+          <span className="editor-header__done-path">
+            ~/Movies/Rushcut/{slugify(projectName)}.mp4
+          </span>
           <button className="btn btn--ghost" onClick={onResetExport}>
             Dismiss
           </button>

@@ -74,9 +74,14 @@ export interface EditorState {
   resetExport: () => void
 }
 
-export function useEditorState(): EditorState {
-  const [mediaBin, setMediaBin] = useState(initialMediaBin)
-  const [timelineClips, setTimelineClips] = useState(initialTimelineClips)
+export interface UseEditorStateOptions {
+  /** Seed the editor with the bundled demo footage/captions instead of starting blank. */
+  demo: boolean
+}
+
+export function useEditorState({ demo }: UseEditorStateOptions): EditorState {
+  const [mediaBin, setMediaBin] = useState(demo ? initialMediaBin : [])
+  const [timelineClips, setTimelineClips] = useState(demo ? initialTimelineClips : [])
   const [nextImportN, setNextImportN] = useState(41)
 
   const [draggingBinId, setDraggingBinId] = useState<string | null>(null)
@@ -98,7 +103,7 @@ export function useEditorState(): EditorState {
   const [uploadIsSelected, setUploadIsSelected] = useState(false)
   const [previewingUpload, setPreviewingUpload] = useState(false)
 
-  const [captions, setCaptions] = useState(initialCaptions)
+  const [captions, setCaptions] = useState(demo ? initialCaptions : [])
   const [editingCaptionId, setEditingCaptionId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
 

@@ -1,80 +1,58 @@
-import EditorHeader from './components/EditorHeader'
-import MediaBinPanel from './components/MediaBinPanel'
-import PlayerPanel from './components/PlayerPanel'
-import RightPanel from './components/RightPanel'
-import TimelinePanel from './components/TimelinePanel'
-import { useEditorState } from './hooks/useEditorState'
-import { formatClipTime } from './mock/format'
+import { useState } from 'react'
+import EditorScreen from './components/EditorScreen'
+import HomeScreen from './components/HomeScreen'
+import { initialProjects } from './mock/projects'
+import type { MockProject } from './mock/projects'
+
+type View = { screen: 'home' } | { screen: 'editor'; projectId: string }
+
+let untitledCount = 0
 
 function App(): React.JSX.Element {
-  const state = useEditorState()
+  const [projects, setProjects] = useState<MockProject[]>(initialProjects)
+  const [view, setView] = useState<View>({ screen: 'home' })
 
-  const clipCountLabel = `${state.timelineClips.length} ${
-    state.timelineClips.length === 1 ? 'clip' : 'clips'
-  }`
+  function handleOpenProject(id: string): void {
+    setView({ screen: 'editor', projectId: id })
+  }
+
+  function handleCreateProject(): void {
+    untitledCount += 1
+    const newProject: MockProject = {
+      id: `proj-${Date.now()}`,
+      name: `Untitled Project ${untitledCount}`,
+      clipCount: 0,
+      durationLabel: '0:00',
+      updatedLabel: 'Just now',
+      seed: Math.floor(Math.random() * 90) + 1
+    }
+    setProjects((prev) => [...prev, newProject])
+    setView({ screen: 'editor', projectId: newProject.id })
+  }
+
+  function handleBack(): void {
+    setView({ screen: 'home' })
+  }
+
+  if (view.screen === 'home') {
+    return (
+      <HomeScreen
+        projects={projects}
+        onOpenProject={handleOpenProject}
+        onCreateProject={handleCreateProject}
+      />
+    )
+  }
+
+  const project = projects.find((p) => p.id === view.projectId)
 
   return (
-    <div className="editor">
-      <EditorHeader
-        exportPhase={state.exportPhase}
-        exportPercent={state.exportPercent}
-        onExport={state.runExport}
-        onResetExport={state.resetExport}
-      />
-
-      <div className="editor__body">
-        <MediaBinPanel
-          items={state.mediaBin}
-          draggingBinId={state.draggingBinId}
-          onImportClip={state.importClip}
-          onDragStart={state.setDraggingBinId}
-          onDragEnd={() => state.setDraggingBinId(null)}
-          onAddToTimeline={state.addBinItemToTimeline}
-        />
-
-        <div className="editor__center">
-          <PlayerPanel
-            currentSec={state.currentSec}
-            totalDurationSec={state.totalDurationSec}
-            isPlaying={state.isPlaying}
-            clipLabel={state.clipLabelForTime(state.currentSec)}
-            onTogglePlay={state.togglePlay}
-            onScrub={state.onScrub}
-          />
-
-          <TimelinePanel
-            clips={state.timelineClips}
-            selectedClipIds={state.selectedClipIds}
-            draggingClipId={state.draggingClipId}
-            dragOverClipId={state.dragOverClipId}
-            fadeJunctions={state.fadeJunctions}
-            normalizedIds={state.normalizedIds}
-            clipCountLabel={clipCountLabel}
-            totalDurationLabel={formatClipTime(state.totalDurationSec)}
-            onSelectClip={state.toggleClipSelection}
-            onClipDragStart={state.setDraggingClipId}
-            onClipDragOver={state.setDragOverClipId}
-            onClipDrop={(targetId) => {
-              if (state.draggingClipId) state.reorderClips(state.draggingClipId, targetId)
-              state.setDraggingClipId(null)
-              state.setDragOverClipId(null)
-            }}
-            onClipDragEnd={() => {
-              state.setDraggingClipId(null)
-              state.setDragOverClipId(null)
-            }}
-            onTimelineDrop={() => {
-              if (state.draggingBinId) {
-                state.addBinItemToTimeline(state.draggingBinId)
-                state.setDraggingBinId(null)
-              }
-            }}
-          />
-        </div>
-
-        <RightPanel {...state} />
-      </div>
-    </div>
+    <EditorScreen
+      key={view.projectId}
+      projectName={project?.name ?? 'Untitled'}
+      isDemo={project?.isDemo ?? false}
+      onBack={handleBack}
+    />
   )
 }
 
