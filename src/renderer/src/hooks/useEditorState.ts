@@ -15,6 +15,7 @@ import { junctionKey, toDisplayClip } from '../utils/format'
 
 const MAX_HISTORY = 50
 const AUTOSAVE_DELAY_MS = 800
+const MIN_CLIP_TRIM_SEC = 0.3
 
 /** The persisted, undoable part of a project — everything else here is ephemeral UI state. */
 interface DocState {
@@ -56,6 +57,7 @@ export interface EditorState {
   draggingClipId: string | null
   dragOverClipId: string | null
   selectedClipIds: string[]
+  activeClipId: string | null
   activeRightTab: RightTab
   setActiveRightTab: Dispatch<SetStateAction<RightTab>>
   fadeJunctions: string[]
@@ -89,7 +91,9 @@ export interface EditorState {
   setDraggingClipId: Dispatch<SetStateAction<string | null>>
   setDragOverClipId: Dispatch<SetStateAction<string | null>>
   reorderClips: (draggedId: string, targetId: string) => void
+  resizeClip: (id: string, trimEndSec: number) => void
   toggleClipSelection: (id: string) => void
+  selectClip: (id: string, additive: boolean) => void
   runNormalize: () => void
   selectTrack: (id: string) => void
   togglePreviewTrack: (id: string) => void
@@ -104,6 +108,8 @@ export interface EditorState {
   commitCaptionEdit: (id: string) => void
   cancelEdit: () => void
   adjustCaptionTime: (id: string, field: 'startSec' | 'endSec', delta: number) => void
+  moveCaption: (id: string, startSec: number, endSec: number) => void
+  selectedMusicTrack: { name: string; durationSec: number } | null
   togglePlay: () => void
   onScrub: (pct: number) => void
   onPlaybackTimeUpdate: (sec: number) => void
@@ -122,6 +128,7 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   const [draggingClipId, setDraggingClipId] = useState<string | null>(null)
   const [dragOverClipId, setDragOverClipId] = useState<string | null>(null)
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([])
+  const [activeClipId, setActiveClipId] = useState<string | null>(null)
 
   const [activeRightTab, setActiveRightTab] = useState<RightTab>('captions')
 
@@ -289,8 +296,47 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     commitDoc({ ...doc, timelineClips: reindexOrder(clips) })
   }
 
+  /** Commits a clip's final out-point — called once at the end of a drag-to-trim
+   *  gesture on the timeline, so a whole drag is a single undo entry. */
+  function resizeClip(id: string, trimEndSec: number): void {
+    const clips = doc.timelineClips.map((c) =>
+      c.id === id
+        ? {
+            ...c,
+            trimEndSec: Math.min(
+              c.durationSec,
+              Math.max(trimEndSec, c.trimStartSec + MIN_CLIP_TRIM_SEC)
+            )
+          }
+        : c
+    )
+    commitDoc({ ...doc, timelineClips: clips })
+  }
+
   function toggleClipSelection(id: string): void {
     setSelectedClipIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  function clipStartOffsetSec(id: string): number | null {
+    let acc = 0
+    for (const c of doc.timelineClips) {
+      if (c.id === id) return acc
+      acc += c.trimEndSec - c.trimStartSec
+    }
+    return null
+  }
+
+  /** Timeline click behavior: a plain click sets which single clip is "active" (jumps the
+   *  player to it) without touching the multi-select used for fade/normalize scope; Ctrl/Cmd
+   *  click instead toggles that multi-select, uncoupled from which clip is previewing. */
+  function selectClip(id: string, additive: boolean): void {
+    if (additive) {
+      toggleClipSelection(id)
+      return
+    }
+    setActiveClipId(id)
+    const offset = clipStartOffsetSec(id)
+    if (offset !== null) setCurrentSec(offset)
   }
 
   function runNormalize(): void {
@@ -381,6 +427,18 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     commitDoc({ ...doc, captions })
   }
 
+  /** Sets a caption's absolute timing (vs. adjustCaptionTime's nudge-by-delta) — used once, at
+   *  the end of a drag-to-move/drag-to-resize gesture on the timeline's text track, so a whole
+   *  drag collapses into a single undo entry instead of one per pointer-move. */
+  function moveCaption(id: string, startSec: number, endSec: number): void {
+    const clampedStart = Math.max(0, startSec)
+    const clampedEnd = Math.max(clampedStart + 0.1, endSec)
+    const captions = doc.captions.map((c) =>
+      c.id === id ? { ...c, startSec: clampedStart, endSec: clampedEnd } : c
+    )
+    commitDoc({ ...doc, captions })
+  }
+
   function togglePlay(): void {
     setIsPlaying((prev) => !prev)
   }
@@ -444,6 +502,10 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     setExportPercent(0)
   }
 
+  const selectedMusicTrack = uploadIsSelected
+    ? uploadedTrack
+    : (tracks.find((t) => t.id === selectedTrackId) ?? null)
+
   return {
     mediaBin: doc.mediaBinClips.map(toDisplayClip),
     timelineClips: doc.timelineClips.map(toDisplayClip),
@@ -451,6 +513,7 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     draggingClipId,
     dragOverClipId,
     selectedClipIds,
+    activeClipId,
     activeRightTab,
     setActiveRightTab,
     fadeJunctions: doc.fadeJunctions,
@@ -484,7 +547,9 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     setDraggingClipId,
     setDragOverClipId,
     reorderClips,
+    resizeClip,
     toggleClipSelection,
+    selectClip,
     runNormalize,
     selectTrack,
     togglePreviewTrack,
@@ -499,6 +564,8 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     commitCaptionEdit,
     cancelEdit,
     adjustCaptionTime,
+    moveCaption,
+    selectedMusicTrack,
     togglePlay,
     onScrub,
     onPlaybackTimeUpdate,
