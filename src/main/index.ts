@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -31,6 +31,14 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Chromium persists page zoom per-origin across restarts (independent of app code),
+  // so a stray Ctrl+- from before the menu fix above can otherwise stick forever.
+  // Force it back to 100% on every load to guarantee a clean slate.
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.setZoomFactor(1)
+    mainWindow.webContents.setZoomLevel(0)
+  })
+
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -46,6 +54,10 @@ function createWindow(): void {
 app.whenReady().then(() => {
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
+
+  // Electron's default menu binds Ctrl+Plus/Ctrl+Minus/Ctrl+0 to whole-window zoom,
+  // which fights with the timeline's own zoom shortcuts — drop the menu entirely.
+  Menu.setApplicationMenu(null)
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
