@@ -1,5 +1,6 @@
 import type { DisplayClip } from '../types'
 import { formatClipTime } from '../utils/format'
+import { seekToFirstFrame, toMediaUrl } from '../utils/media'
 
 interface MediaBinPanelProps {
   items: DisplayClip[]
@@ -37,7 +38,13 @@ function MediaBinPanel({
             onDragEnd={onDragEnd}
             style={{ opacity: draggingBinId === item.id ? 0.35 : 1 }}
           >
-            <span className="media-bin__thumb">⤢</span>
+            <video
+              className="media-bin__thumb"
+              src={toMediaUrl(item.sourcePath)}
+              muted
+              preload="metadata"
+              onLoadedMetadata={seekToFirstFrame}
+            />
             <div className="media-bin__meta">
               <div className="media-bin__name">{item.name}</div>
               <div className="media-bin__duration">{formatClipTime(item.durationSec)}</div>

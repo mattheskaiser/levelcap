@@ -1,5 +1,6 @@
 import type { DisplayClip } from '../types'
-import { formatClipTime, junctionKey, waveformPath } from '../utils/format'
+import { formatClipTime, junctionKey } from '../utils/format'
+import { seekToFirstFrame, toMediaUrl } from '../utils/media'
 
 interface TimelinePanelProps {
   clips: DisplayClip[]
@@ -87,15 +88,13 @@ function TimelinePanel({
                     <span className="timeline-clip__norm-badge">NORM ✓</span>
                   )}
                 </div>
-                <div className="timeline-clip__waveform">
-                  <svg width="100%" height="34" viewBox="0 0 140 34" preserveAspectRatio="none">
-                    <path
-                      d={waveformPath(clip.id)}
-                      stroke="rgba(255,255,255,0.5)"
-                      strokeWidth="2"
-                      fill="none"
-                    />
-                  </svg>
+                <div className="timeline-clip__thumb">
+                  <video
+                    src={toMediaUrl(clip.sourcePath)}
+                    muted
+                    preload="metadata"
+                    onLoadedMetadata={seekToFirstFrame}
+                  />
                 </div>
                 <div>
                   <div className="timeline-clip__name">{clip.name}</div>
