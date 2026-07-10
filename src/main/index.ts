@@ -4,6 +4,9 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { runSmokeTest } from './smokeTest'
 import { registerIpcHandlers } from './ipc'
+import { registerMediaProtocolHandler, registerMediaProtocolPrivileges } from './mediaProtocol'
+
+registerMediaProtocolPrivileges()
 
 function createWindow(): void {
   // Create the browser window.
@@ -55,6 +58,7 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   registerIpcHandlers()
+  registerMediaProtocolHandler()
 
   if (is.dev) {
     runSmokeTest()
