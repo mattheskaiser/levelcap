@@ -106,6 +106,7 @@ export interface EditorState {
   adjustCaptionTime: (id: string, field: 'startSec' | 'endSec', delta: number) => void
   togglePlay: () => void
   onScrub: (pct: number) => void
+  onPlaybackTimeUpdate: (sec: number) => void
   runExport: () => void
   resetExport: () => void
 }
@@ -148,7 +149,6 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   const normalizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const exportTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const exportEngineRef = useRef<ExportEngine>({ phase: null, percent: 0, clipIdx: 0 })
-  const playTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const totalDurationRef = useRef(0)
   const isFirstDocEffectRef = useRef(true)
@@ -199,7 +199,6 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     return (): void => {
       clearTimeout(normalizeTimerRef.current)
       clearInterval(exportTimerRef.current)
-      clearInterval(playTimerRef.current)
       clearTimeout(saveTimerRef.current)
       void window.api.saveProject(buildProjectPayload(docRef.current))
     }
@@ -383,27 +382,20 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   }
 
   function togglePlay(): void {
-    const willPlay = !isPlaying
-    setIsPlaying(willPlay)
-    clearInterval(playTimerRef.current)
-    if (willPlay) {
-      playTimerRef.current = setInterval(() => {
-        setCurrentSec((prev) => {
-          const total = totalDurationRef.current
-          const next = prev + 0.25
-          if (next >= total) {
-            clearInterval(playTimerRef.current)
-            setIsPlaying(false)
-            return total
-          }
-          return next
-        })
-      }, 250)
-    }
+    setIsPlaying((prev) => !prev)
   }
 
   function onScrub(pct: number): void {
     setCurrentSec(pct * totalDurationSec)
+  }
+
+  /** Driven by the real <video> element's timeupdate — replaces the old fake ticker. */
+  function onPlaybackTimeUpdate(sec: number): void {
+    const clamped = Math.max(0, Math.min(sec, totalDurationRef.current))
+    setCurrentSec(clamped)
+    if (clamped >= totalDurationRef.current - 0.02) {
+      setIsPlaying(false)
+    }
   }
 
   function runExport(): void {
@@ -509,6 +501,7 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     adjustCaptionTime,
     togglePlay,
     onScrub,
+    onPlaybackTimeUpdate,
     runExport,
     resetExport
   }

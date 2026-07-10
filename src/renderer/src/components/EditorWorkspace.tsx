@@ -47,12 +47,13 @@ function EditorWorkspace({ project, onBack }: EditorWorkspaceProps): React.JSX.E
 
         <div className="editor__center">
           <PlayerPanel
+            clips={state.timelineClips}
             currentSec={state.currentSec}
             totalDurationSec={state.totalDurationSec}
             isPlaying={state.isPlaying}
-            clipLabel={state.clipLabelForTime(state.currentSec)}
             onTogglePlay={state.togglePlay}
             onScrub={state.onScrub}
+            onPlaybackTimeUpdate={state.onPlaybackTimeUpdate}
           />
 
           <TimelinePanel
