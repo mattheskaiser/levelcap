@@ -1,16 +1,35 @@
+import { randomUUID } from 'crypto'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { RushcutApi } from '@shared/ipc'
+import type { ExportResult, PipelineProgressEvent, Segment } from '@shared/types'
 
 // Custom APIs for renderer
 const api: RushcutApi = {
-  selectAndImportClips: () => ipcRenderer.invoke('clips:import:dialog'),
-  importClipsFromPaths: (filePaths) => ipcRenderer.invoke('clips:import', filePaths),
+  selectVideo: () => ipcRenderer.invoke('video:select'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
-  listProjects: () => ipcRenderer.invoke('projects:list'),
-  createProject: (name) => ipcRenderer.invoke('projects:create', name),
-  loadProject: (id) => ipcRenderer.invoke('projects:load', id),
-  saveProject: (project) => ipcRenderer.invoke('projects:save', project)
+  importVideoFromPath: (filePath) => ipcRenderer.invoke('video:importPath', filePath),
+
+  runPipeline: (video, onProgress) =>
+    new Promise<void>((resolve, reject) => {
+      const requestId = randomUUID()
+      const channel = `pipeline:progress:${requestId}`
+      const listener = (_event: unknown, progress: PipelineProgressEvent): void => {
+        onProgress(progress)
+        if (progress.phase === 'done') {
+          ipcRenderer.removeListener(channel, listener)
+          resolve()
+        } else if (progress.phase === 'error') {
+          ipcRenderer.removeListener(channel, listener)
+          reject(new Error(progress.message))
+        }
+      }
+      ipcRenderer.on(channel, listener)
+      ipcRenderer.send('pipeline:run', requestId, video)
+    }),
+
+  exportResult: (normalizedVideoPath: string, segments: Segment[]) =>
+    ipcRenderer.invoke('export:run', normalizedVideoPath, segments) as Promise<ExportResult | null>
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
