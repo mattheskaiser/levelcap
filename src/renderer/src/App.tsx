@@ -1,49 +1,42 @@
-import { useCallback, useEffect, useState } from 'react'
-import EditorScreen from './components/EditorScreen'
-import HomeScreen from './components/HomeScreen'
-import type { ProjectSummary } from '@shared/types'
-
-type View = { screen: 'home' } | { screen: 'editor'; projectId: string }
+import { usePipeline } from './hooks/usePipeline'
+import UploadScreen from './components/UploadScreen'
+import ProcessingScreen from './components/ProcessingScreen'
+import WorkspaceScreen from './components/WorkspaceScreen'
 
 function App(): React.JSX.Element {
-  const [projects, setProjects] = useState<ProjectSummary[] | null>(null)
-  const [view, setView] = useState<View>({ screen: 'home' })
+  const pipeline = usePipeline()
 
-  const refreshProjects = useCallback(() => {
-    void window.api.listProjects().then(setProjects)
-  }, [])
-
-  useEffect(() => {
-    refreshProjects()
-  }, [refreshProjects])
-
-  async function handleCreateProject(): Promise<void> {
-    const name = `Untitled Project ${(projects?.length ?? 0) + 1}`
-    const project = await window.api.createProject(name)
-    refreshProjects()
-    setView({ screen: 'editor', projectId: project.id })
-  }
-
-  function handleOpenProject(id: string): void {
-    setView({ screen: 'editor', projectId: id })
-  }
-
-  function handleBack(): void {
-    refreshProjects()
-    setView({ screen: 'home' })
-  }
-
-  if (view.screen === 'home') {
+  if (pipeline.stage === 'upload') {
     return (
-      <HomeScreen
-        projects={projects}
-        onOpenProject={handleOpenProject}
-        onCreateProject={() => void handleCreateProject()}
+      <UploadScreen
+        onSelectVideo={pipeline.selectVideo}
+        onDroppedPath={pipeline.importDroppedPath}
+        errorMessage={pipeline.errorMessage}
       />
     )
   }
 
-  return <EditorScreen key={view.projectId} projectId={view.projectId} onBack={handleBack} />
+  if (pipeline.stage === 'processing') {
+    return <ProcessingScreen progress={pipeline.progress} />
+  }
+
+  if (!pipeline.normalizedVideoPath) {
+    return <div className="app-status">Something went wrong.</div>
+  }
+
+  return (
+    <WorkspaceScreen
+      normalizedVideoPath={pipeline.normalizedVideoPath}
+      segments={pipeline.segments}
+      isExporting={pipeline.isExporting}
+      exported={pipeline.exported}
+      onUpdateText={pipeline.updateSegmentText}
+      onNudgeTime={pipeline.nudgeSegmentTime}
+      onDeleteSegment={pipeline.deleteSegment}
+      onExport={pipeline.runExport}
+      onStartOver={pipeline.reset}
+    />
+  )
 }
 
 export default App
