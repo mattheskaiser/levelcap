@@ -32,12 +32,11 @@ async function probeDurationSec(filePath: string): Promise<number> {
 
 export async function importClips(filePaths: string[]): Promise<Clip[]> {
   const clips: Clip[] = []
-  for (const [index, sourcePath] of filePaths.entries()) {
+  for (const sourcePath of filePaths) {
     const durationSec = await probeDurationSec(sourcePath)
     clips.push({
       id: randomUUID(),
       sourcePath,
-      order: index,
       durationSec,
       trimStartSec: 0,
       trimEndSec: durationSec
