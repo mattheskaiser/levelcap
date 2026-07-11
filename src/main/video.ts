@@ -1,8 +1,7 @@
-import { randomUUID } from 'crypto'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { path as ffprobePath } from '@ffprobe-installer/ffprobe'
-import type { Clip } from '@shared/types'
+import type { SourceVideo } from '@shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -30,17 +29,7 @@ async function probeDurationSec(filePath: string): Promise<number> {
   return duration
 }
 
-export async function importClips(filePaths: string[]): Promise<Clip[]> {
-  const clips: Clip[] = []
-  for (const sourcePath of filePaths) {
-    const durationSec = await probeDurationSec(sourcePath)
-    clips.push({
-      id: randomUUID(),
-      sourcePath,
-      durationSec,
-      trimStartSec: 0,
-      trimEndSec: durationSec
-    })
-  }
-  return clips
+export async function importVideo(filePath: string): Promise<SourceVideo> {
+  const durationSec = await probeDurationSec(filePath)
+  return { path: filePath, durationSec }
 }

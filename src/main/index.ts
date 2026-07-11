@@ -2,7 +2,6 @@ import { app, shell, BrowserWindow, ipcMain, Menu } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { runSmokeTest } from './smokeTest'
 import { registerIpcHandlers } from './ipc'
 import { registerMediaProtocolHandler, registerMediaProtocolPrivileges } from './mediaProtocol'
 
@@ -71,10 +70,6 @@ app.whenReady().then(() => {
 
   registerIpcHandlers()
   registerMediaProtocolHandler()
-
-  if (is.dev) {
-    runSmokeTest()
-  }
 
   createWindow()
 
