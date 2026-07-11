@@ -1,5 +1,5 @@
-import type { Clip } from '@shared/types'
-import type { DisplayClip } from '../types'
+import type { Clip, VideoTrackItem } from '@shared/types'
+import type { DisplayClip, DisplayVideoItem } from '../types'
 
 export function formatClipTime(sec: number): string {
   const m = Math.floor(sec / 60)
@@ -45,4 +45,8 @@ export function basename(filePath: string): string {
 
 export function toDisplayClip(clip: Clip): DisplayClip {
   return { ...clip, name: basename(clip.sourcePath) }
+}
+
+export function toDisplayVideoItem(item: VideoTrackItem): DisplayVideoItem {
+  return { ...item, name: basename(item.sourcePath) }
 }

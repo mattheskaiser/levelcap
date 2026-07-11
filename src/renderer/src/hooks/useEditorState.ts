@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import type { CaptionSegment, Clip, Project } from '@shared/types'
+import type {
+  CaptionSegment,
+  Clip,
+  Project,
+  TextTrackItem,
+  Track,
+  TrackItem,
+  VideoTrackItem
+} from '@shared/types'
+import { CURRENT_SCHEMA_VERSION } from '@shared/types'
+import {
+  findTrackItem,
+  itemDurationSec,
+  itemEndSec,
+  textItemsAcrossTracks,
+  timelineDurationSec,
+  videoItemsAcrossTracks
+} from '@shared/tracks'
 import { initialTracks } from '../mock/data'
 import type {
   ExportPhase,
@@ -10,18 +27,20 @@ import type {
   RightTab,
   SaveStatus
 } from '../mock/types'
-import type { DisplayClip } from '../types'
-import { junctionKey, toDisplayClip } from '../utils/format'
+import type { DisplayClip, DisplayVideoItem } from '../types'
+import { basename, junctionKey, toDisplayClip, toDisplayVideoItem } from '../utils/format'
+import { locateActiveVideoItem } from '../utils/media'
 
 const MAX_HISTORY = 50
 const AUTOSAVE_DELAY_MS = 800
 const MIN_CLIP_TRIM_SEC = 0.3
+const OVERLAP_EPSILON_SEC = 0.001
+const FADE_ADJACENCY_EPSILON_SEC = 0.05
 
 /** The persisted, undoable part of a project — everything else here is ephemeral UI state. */
 interface DocState {
   mediaBinClips: Clip[]
-  timelineClips: Clip[]
-  captions: CaptionSegment[]
+  tracks: Track[]
   fadeJunctions: string[]
   normalizedClipIds: string[]
 }
@@ -29,15 +48,10 @@ interface DocState {
 function docFromProject(project: Project): DocState {
   return {
     mediaBinClips: project.mediaBinClips,
-    timelineClips: project.timelineClips,
-    captions: project.captions,
+    tracks: project.tracks,
     fadeJunctions: project.settings.fadeJunctions,
     normalizedClipIds: project.settings.normalizedClipIds
   }
-}
-
-function reindexOrder(clips: Clip[]): Clip[] {
-  return clips.map((c, i) => ({ ...c, order: i }))
 }
 
 interface ExportEngine {
@@ -46,16 +60,62 @@ interface ExportEngine {
   clipIdx: number
 }
 
+/** Snaps a desired start time away from overlapping any sibling on the same track — items on
+ *  one track may never overlap in time; overlap across different tracks is fine (that's what
+ *  tracks are for). */
+function clampStartToAvoidOverlap(
+  siblings: TrackItem[],
+  excludingId: string,
+  desiredStart: number,
+  durationSec: number
+): number {
+  const occupied = siblings
+    .filter((i) => i.id !== excludingId)
+    .map((i) => ({ start: i.startSec, end: itemEndSec(i) }))
+    .sort((a, b) => a.start - b.start)
+
+  function overlapsAt(start: number): { start: number; end: number } | null {
+    const end = start + durationSec
+    for (const o of occupied) {
+      if (start < o.end - OVERLAP_EPSILON_SEC && end > o.start + OVERLAP_EPSILON_SEC) return o
+    }
+    return null
+  }
+
+  const clampedDesired = Math.max(0, desiredStart)
+  const hit = overlapsAt(clampedDesired)
+  if (!hit) return clampedDesired
+
+  const beforeCandidate = Math.max(0, hit.start - durationSec)
+  const afterCandidate = hit.end
+  const beforeOk = !overlapsAt(beforeCandidate)
+  const afterOk = !overlapsAt(afterCandidate)
+
+  if (beforeOk && afterOk) {
+    return Math.abs(beforeCandidate - clampedDesired) <= Math.abs(afterCandidate - clampedDesired)
+      ? beforeCandidate
+      : afterCandidate
+  }
+  if (afterOk) return afterCandidate
+  if (beforeOk) return beforeCandidate
+  return occupied.reduce((max, o) => Math.max(max, o.end), 0)
+}
+
+function withMovedStart(item: TrackItem, newStart: number): TrackItem {
+  if (item.kind === 'video') return { ...item, startSec: newStart }
+  const duration = item.endSec - item.startSec
+  return { ...item, startSec: newStart, endSec: newStart + duration }
+}
+
 export interface UseEditorStateOptions {
   project: Project
 }
 
 export interface EditorState {
   mediaBin: DisplayClip[]
-  timelineClips: DisplayClip[]
+  videoItems: DisplayVideoItem[]
+  tracks: Track[]
   draggingBinId: string | null
-  draggingClipId: string | null
-  dragOverClipId: string | null
   selectedClipIds: string[]
   activeClipId: string | null
   activeRightTab: RightTab
@@ -65,7 +125,7 @@ export interface EditorState {
   normalizeStatus: NormalizeStatus
   musicTab: MusicTab
   setMusicTab: Dispatch<SetStateAction<MusicTab>>
-  tracks: MockTrack[]
+  musicLibraryTracks: MockTrack[]
   selectedTrackId: string | null
   previewingId: string | null
   uploadedTrack: MockUploadedTrack | null
@@ -86,12 +146,14 @@ export interface EditorState {
   redo: () => void
   clipLabelForTime: (t: number) => string
   importClip: () => void
-  addBinItemToTimeline: (binId: string) => void
+  addBinItemToTimeline: (binId: string, trackId?: string, startSec?: number) => void
   setDraggingBinId: Dispatch<SetStateAction<string | null>>
-  setDraggingClipId: Dispatch<SetStateAction<string | null>>
-  setDragOverClipId: Dispatch<SetStateAction<string | null>>
-  reorderClips: (draggedId: string, targetId: string) => void
-  resizeClip: (id: string, trimEndSec: number) => void
+  addTrack: () => void
+  removeTrack: (trackId: string) => void
+  reorderTracks: (draggedTrackId: string, targetTrackId: string) => void
+  moveItemWithinTrack: (itemId: string, desiredStartSec: number) => void
+  moveItemToTrack: (itemId: string, targetTrackId: string, desiredStartSec: number) => void
+  resizeVideoItem: (itemId: string, trimEndSec: number) => void
   toggleClipSelection: (id: string) => void
   selectClip: (id: string, additive: boolean) => void
   runNormalize: () => void
@@ -109,7 +171,6 @@ export interface EditorState {
   cancelEdit: () => void
   adjustCaptionTime: (id: string, field: 'startSec' | 'endSec', delta: number) => void
   moveCaption: (id: string, startSec: number, endSec: number) => void
-  selectedMusicTrack: { name: string; durationSec: number } | null
   togglePlay: () => void
   onScrub: (pct: number) => void
   onPlaybackTimeUpdate: (sec: number) => void
@@ -125,8 +186,6 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   const [redoStack, setRedoStack] = useState<DocState[]>([])
 
   const [draggingBinId, setDraggingBinId] = useState<string | null>(null)
-  const [draggingClipId, setDraggingClipId] = useState<string | null>(null)
-  const [dragOverClipId, setDragOverClipId] = useState<string | null>(null)
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([])
   const [activeClipId, setActiveClipId] = useState<string | null>(null)
 
@@ -135,7 +194,7 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   const [normalizeStatus, setNormalizeStatus] = useState<NormalizeStatus>('idle')
 
   const [musicTab, setMusicTab] = useState<MusicTab>('library')
-  const [tracks] = useState(initialTracks)
+  const [musicLibraryTracks] = useState(initialTracks)
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null)
   const [previewingId, setPreviewingId] = useState<string | null>(null)
   const [uploadedTrack, setUploadedTrack] = useState<MockUploadedTrack | null>(null)
@@ -160,10 +219,7 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   const totalDurationRef = useRef(0)
   const isFirstDocEffectRef = useRef(true)
 
-  const totalDurationSec = doc.timelineClips.reduce(
-    (acc, c) => acc + (c.trimEndSec - c.trimStartSec),
-    0
-  )
+  const totalDurationSec = timelineDurationSec(doc.tracks)
 
   useEffect(() => {
     totalDurationRef.current = totalDurationSec
@@ -171,13 +227,13 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
 
   function buildProjectPayload(d: DocState): Project {
     return {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       id: project.id,
       name: project.name,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
       mediaBinClips: d.mediaBinClips,
-      timelineClips: d.timelineClips,
-      captions: d.captions,
+      tracks: d.tracks,
       settings: {
         fadeJunctions: d.fadeJunctions,
         normalizedClipIds: d.normalizedClipIds
@@ -254,15 +310,8 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   })
 
   function clipLabelForTime(t: number): string {
-    let acc = 0
-    for (let i = 0; i < doc.timelineClips.length; i++) {
-      const c = doc.timelineClips[i]
-      if (!c) continue
-      const dur = c.trimEndSec - c.trimStartSec
-      if (t >= acc && t < acc + dur) return `Clip ${i + 1}`
-      acc += dur
-    }
-    return doc.timelineClips.length ? `Clip ${doc.timelineClips.length}` : '—'
+    const active = locateActiveVideoItem(doc.tracks, t)
+    return active ? basename(active.item.sourcePath) : '—'
   }
 
   function importClip(): void {
@@ -273,57 +322,148 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     })()
   }
 
-  function addBinItemToTimeline(binId: string): void {
-    const item = doc.mediaBinClips.find((b) => b.id === binId)
-    if (!item) return
+  function addBinItemToTimeline(binId: string, trackId?: string, startSec?: number): void {
+    const binItem = doc.mediaBinClips.find((b) => b.id === binId)
+    if (!binItem) return
+
+    let tracks = doc.tracks
+    let targetTrack = trackId ? tracks.find((t) => t.id === trackId) : undefined
+    if (!targetTrack && !trackId) {
+      targetTrack = tracks.find((t) => t.items.some((i) => i.kind === 'video'))
+    }
+    if (!targetTrack) {
+      targetTrack = { id: crypto.randomUUID(), name: `Track ${tracks.length + 1}`, items: [] }
+      tracks = [...tracks, targetTrack]
+    }
+
+    const duration = binItem.trimEndSec - binItem.trimStartSec
+    const placedStart = clampStartToAvoidOverlap(
+      targetTrack.items,
+      binItem.id,
+      startSec ?? timelineDurationSec([targetTrack]),
+      duration
+    )
+
+    const newItem: VideoTrackItem = {
+      kind: 'video',
+      id: binItem.id,
+      sourcePath: binItem.sourcePath,
+      durationSec: binItem.durationSec,
+      trimStartSec: binItem.trimStartSec,
+      trimEndSec: binItem.trimEndSec,
+      startSec: placedStart
+    }
+
+    const targetTrackId = targetTrack.id
+    const nextTracks = tracks.map((t) =>
+      t.id === targetTrackId ? { ...t, items: [...t.items, newItem] } : t
+    )
+
     commitDoc({
       ...doc,
-      mediaBinClips: doc.mediaBinClips.filter((b) => b.id !== binId),
-      timelineClips: reindexOrder([...doc.timelineClips, item])
+      tracks: nextTracks,
+      mediaBinClips: doc.mediaBinClips.filter((b) => b.id !== binId)
     })
   }
 
-  function reorderClips(draggedId: string, targetId: string): void {
-    if (draggedId === targetId) return
-    const clips = [...doc.timelineClips]
-    const from = clips.findIndex((c) => c.id === draggedId)
-    const to = clips.findIndex((c) => c.id === targetId)
-    if (from < 0 || to < 0) return
-    const item = clips[from]
-    if (!item) return
-    clips.splice(from, 1)
-    clips.splice(to, 0, item)
-    commitDoc({ ...doc, timelineClips: reindexOrder(clips) })
+  function addTrack(): void {
+    const track: Track = {
+      id: crypto.randomUUID(),
+      name: `Track ${doc.tracks.length + 1}`,
+      items: []
+    }
+    commitDoc({ ...doc, tracks: [...doc.tracks, track] })
   }
 
-  /** Commits a clip's final out-point — called once at the end of a drag-to-trim
-   *  gesture on the timeline, so a whole drag is a single undo entry. */
-  function resizeClip(id: string, trimEndSec: number): void {
-    const clips = doc.timelineClips.map((c) =>
-      c.id === id
+  function removeTrack(trackId: string): void {
+    commitDoc({ ...doc, tracks: doc.tracks.filter((t) => t.id !== trackId) })
+  }
+
+  function reorderTracks(draggedTrackId: string, targetTrackId: string): void {
+    if (draggedTrackId === targetTrackId) return
+    const list = [...doc.tracks]
+    const from = list.findIndex((t) => t.id === draggedTrackId)
+    const to = list.findIndex((t) => t.id === targetTrackId)
+    if (from < 0 || to < 0) return
+    const moved = list[from]
+    if (!moved) return
+    list.splice(from, 1)
+    list.splice(to, 0, moved)
+    commitDoc({ ...doc, tracks: list })
+  }
+
+  function moveItemWithinTrack(itemId: string, desiredStartSec: number): void {
+    const found = findTrackItem(doc.tracks, itemId)
+    if (!found) return
+    const duration = itemDurationSec(found.item)
+    const startSec = clampStartToAvoidOverlap(found.track.items, itemId, desiredStartSec, duration)
+    const nextTracks = doc.tracks.map((t, i) =>
+      i === found.trackIndex
         ? {
-            ...c,
-            trimEndSec: Math.min(
-              c.durationSec,
-              Math.max(trimEndSec, c.trimStartSec + MIN_CLIP_TRIM_SEC)
+            ...t,
+            items: t.items.map((it) => (it.id === itemId ? withMovedStart(it, startSec) : it))
+          }
+        : t
+    )
+    commitDoc({ ...doc, tracks: nextTracks })
+  }
+
+  function moveItemToTrack(itemId: string, targetTrackId: string, desiredStartSec: number): void {
+    const found = findTrackItem(doc.tracks, itemId)
+    if (!found) return
+    if (found.track.id === targetTrackId) {
+      moveItemWithinTrack(itemId, desiredStartSec)
+      return
+    }
+    const targetTrack = doc.tracks.find((t) => t.id === targetTrackId)
+    if (!targetTrack) return
+    const duration = itemDurationSec(found.item)
+    const startSec = clampStartToAvoidOverlap(targetTrack.items, itemId, desiredStartSec, duration)
+    const movedItem = withMovedStart(found.item, startSec)
+    const nextTracks = doc.tracks.map((t) => {
+      if (t.id === found.track.id) return { ...t, items: t.items.filter((it) => it.id !== itemId) }
+      if (t.id === targetTrackId) return { ...t, items: [...t.items, movedItem] }
+      return t
+    })
+    commitDoc({ ...doc, tracks: nextTracks })
+  }
+
+  /** Commits a video item's final out-point — called once at the end of a drag-to-trim gesture,
+   *  so a whole drag is a single undo entry. Clamps against the next same-track item's start so
+   *  trimming never ripples/overlaps into whatever comes after it. */
+  function resizeVideoItem(itemId: string, trimEndSec: number): void {
+    const found = findTrackItem(doc.tracks, itemId)
+    if (!found || found.item.kind !== 'video') return
+    const item = found.item
+
+    const nextNeighborStart = found.track.items
+      .filter((i) => i.id !== itemId && i.startSec > item.startSec)
+      .reduce((min, i) => Math.min(min, i.startSec), Infinity)
+    const maxTrimEnd = Number.isFinite(nextNeighborStart)
+      ? item.trimStartSec + (nextNeighborStart - item.startSec)
+      : item.durationSec
+
+    const clampedTrimEnd = Math.min(
+      item.durationSec,
+      maxTrimEnd,
+      Math.max(trimEndSec, item.trimStartSec + MIN_CLIP_TRIM_SEC)
+    )
+
+    const nextTracks = doc.tracks.map((t, i) =>
+      i === found.trackIndex
+        ? {
+            ...t,
+            items: t.items.map((it) =>
+              it.id === itemId && it.kind === 'video' ? { ...it, trimEndSec: clampedTrimEnd } : it
             )
           }
-        : c
+        : t
     )
-    commitDoc({ ...doc, timelineClips: clips })
+    commitDoc({ ...doc, tracks: nextTracks })
   }
 
   function toggleClipSelection(id: string): void {
     setSelectedClipIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
-
-  function clipStartOffsetSec(id: string): number | null {
-    let acc = 0
-    for (const c of doc.timelineClips) {
-      if (c.id === id) return acc
-      acc += c.trimEndSec - c.trimStartSec
-    }
-    return null
   }
 
   /** Timeline click behavior: a plain click sets which single clip is "active" (jumps the
@@ -335,12 +475,14 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
       return
     }
     setActiveClipId(id)
-    const offset = clipStartOffsetSec(id)
-    if (offset !== null) setCurrentSec(offset)
+    const found = findTrackItem(doc.tracks, id)
+    if (found) setCurrentSec(found.item.startSec)
   }
 
   function runNormalize(): void {
-    const scope = selectedClipIds.length ? selectedClipIds : doc.timelineClips.map((c) => c.id)
+    const scope = selectedClipIds.length
+      ? selectedClipIds
+      : videoItemsAcrossTracks(doc.tracks).map((i) => i.id)
     clearTimeout(normalizeTimerRef.current)
     setNormalizeStatus('running')
     normalizeTimerRef.current = setTimeout(() => {
@@ -373,14 +515,25 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     setPreviewingId(null)
   }
 
+  /** A fade is only offerable between exactly two selected video items that are on the SAME
+   *  track and touch end-to-end (no gap) — array-index adjacency no longer means anything once
+   *  items carry independent absolute positions. */
   function orderedSelectedPair(): [string, string] | [null, null] {
     if (selectedClipIds.length !== 2) return [null, null]
     const [selA, selB] = selectedClipIds
     if (!selA || !selB) return [null, null]
-    const idxA = doc.timelineClips.findIndex((c) => c.id === selA)
-    const idxB = doc.timelineClips.findIndex((c) => c.id === selB)
-    if (idxA < 0 || idxB < 0 || Math.abs(idxA - idxB) !== 1) return [null, null]
-    return idxA < idxB ? [selA, selB] : [selB, selA]
+    const foundA = findTrackItem(doc.tracks, selA)
+    const foundB = findTrackItem(doc.tracks, selB)
+    if (!foundA || !foundB) return [null, null]
+    if (foundA.item.kind !== 'video' || foundB.item.kind !== 'video') return [null, null]
+    if (foundA.track.id !== foundB.track.id) return [null, null]
+    const [first, second] =
+      foundA.item.startSec <= foundB.item.startSec
+        ? [foundA.item, foundB.item]
+        : [foundB.item, foundA.item]
+    const gap = Math.abs(second.startSec - itemEndSec(first))
+    if (gap > FADE_ADJACENCY_EPSILON_SEC) return [null, null]
+    return [first.id, second.id]
   }
 
   function toggleFadeAction(): void {
@@ -406,9 +559,22 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     setEditDraft(text)
   }
 
+  function updateTextItem(id: string, updater: (item: TextTrackItem) => TextTrackItem): void {
+    const found = findTrackItem(doc.tracks, id)
+    if (!found || found.item.kind !== 'text') return
+    const nextTracks = doc.tracks.map((t, i) =>
+      i === found.trackIndex
+        ? {
+            ...t,
+            items: t.items.map((it) => (it.id === id && it.kind === 'text' ? updater(it) : it))
+          }
+        : t
+    )
+    commitDoc({ ...doc, tracks: nextTracks })
+  }
+
   function commitCaptionEdit(id: string): void {
-    const captions = doc.captions.map((c) => (c.id === id ? { ...c, text: editDraft } : c))
-    commitDoc({ ...doc, captions })
+    updateTextItem(id, (item) => ({ ...item, text: editDraft }))
     setEditingCaptionId(null)
   }
 
@@ -417,26 +583,25 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   }
 
   function adjustCaptionTime(id: string, field: 'startSec' | 'endSec', delta: number): void {
-    const captions = doc.captions.map((c) => {
-      if (c.id !== id) return c
-      let v = Math.max(0, +(c[field] + delta).toFixed(1))
-      if (field === 'startSec') v = Math.min(v, c.endSec - 0.1)
-      if (field === 'endSec') v = Math.max(v, c.startSec + 0.1)
-      return { ...c, [field]: v }
+    updateTextItem(id, (item) => {
+      let v = Math.max(0, +(item[field] + delta).toFixed(1))
+      if (field === 'startSec') v = Math.min(v, item.endSec - 0.1)
+      if (field === 'endSec') v = Math.max(v, item.startSec + 0.1)
+      return { ...item, [field]: v }
     })
-    commitDoc({ ...doc, captions })
   }
 
   /** Sets a caption's absolute timing (vs. adjustCaptionTime's nudge-by-delta) — used once, at
    *  the end of a drag-to-move/drag-to-resize gesture on the timeline's text track, so a whole
-   *  drag collapses into a single undo entry instead of one per pointer-move. */
+   *  drag collapses into a single undo entry instead of one per pointer-move. Also snapped away
+   *  from overlapping another caption on the same text track. */
   function moveCaption(id: string, startSec: number, endSec: number): void {
+    const found = findTrackItem(doc.tracks, id)
+    if (!found || found.item.kind !== 'text') return
     const clampedStart = Math.max(0, startSec)
-    const clampedEnd = Math.max(clampedStart + 0.1, endSec)
-    const captions = doc.captions.map((c) =>
-      c.id === id ? { ...c, startSec: clampedStart, endSec: clampedEnd } : c
-    )
-    commitDoc({ ...doc, captions })
+    const duration = Math.max(0.1, endSec - clampedStart)
+    const safeStart = clampStartToAvoidOverlap(found.track.items, id, clampedStart, duration)
+    updateTextItem(id, (item) => ({ ...item, startSec: safeStart, endSec: safeStart + duration }))
   }
 
   function togglePlay(): void {
@@ -457,7 +622,7 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
   }
 
   function runExport(): void {
-    const totalClips = doc.timelineClips.length || 1
+    const totalClips = videoItemsAcrossTracks(doc.tracks).length || 1
     exportEngineRef.current = { phase: 'normalizing', percent: 0, clipIdx: 0 }
     setExportPhase('normalizing')
     setExportPercent(0)
@@ -502,16 +667,11 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     setExportPercent(0)
   }
 
-  const selectedMusicTrack = uploadIsSelected
-    ? uploadedTrack
-    : (tracks.find((t) => t.id === selectedTrackId) ?? null)
-
   return {
     mediaBin: doc.mediaBinClips.map(toDisplayClip),
-    timelineClips: doc.timelineClips.map(toDisplayClip),
+    videoItems: videoItemsAcrossTracks(doc.tracks).map(toDisplayVideoItem),
+    tracks: doc.tracks,
     draggingBinId,
-    draggingClipId,
-    dragOverClipId,
     selectedClipIds,
     activeClipId,
     activeRightTab,
@@ -521,13 +681,13 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     normalizeStatus,
     musicTab,
     setMusicTab,
-    tracks,
+    musicLibraryTracks,
     selectedTrackId,
     previewingId,
     uploadedTrack,
     uploadIsSelected,
     previewingUpload,
-    captions: doc.captions,
+    captions: textItemsAcrossTracks(doc.tracks),
     editingCaptionId,
     editDraft,
     isPlaying,
@@ -544,10 +704,12 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     importClip,
     addBinItemToTimeline,
     setDraggingBinId,
-    setDraggingClipId,
-    setDragOverClipId,
-    reorderClips,
-    resizeClip,
+    addTrack,
+    removeTrack,
+    reorderTracks,
+    moveItemWithinTrack,
+    moveItemToTrack,
+    resizeVideoItem,
     toggleClipSelection,
     selectClip,
     runNormalize,
@@ -565,7 +727,6 @@ export function useEditorState({ project }: UseEditorStateOptions): EditorState 
     cancelEdit,
     adjustCaptionTime,
     moveCaption,
-    selectedMusicTrack,
     togglePlay,
     onScrub,
     onPlaybackTimeUpdate,

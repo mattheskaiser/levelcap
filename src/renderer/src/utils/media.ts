@@ -1,4 +1,4 @@
-import type { Clip } from '@shared/types'
+import type { Track, VideoTrackItem } from '@shared/types'
 import { MEDIA_PROTOCOL } from '@shared/media'
 
 export function toMediaUrl(sourcePath: string): string {
@@ -13,40 +13,47 @@ export function seekToFirstFrame(event: React.SyntheticEvent<HTMLVideoElement>):
   }
 }
 
-export interface ActiveClipPosition {
-  clip: Clip
-  clipIndex: number
-  /** Seconds into the clip's own source file to seek to. */
+export interface ActiveVideoItem {
+  item: VideoTrackItem
+  trackId: string
+  /** Seconds into the item's own source file to seek to. */
   sourceTimeSec: number
-  /** Where this clip begins on the assembled timeline, in seconds. */
-  clipStartOffsetSec: number
 }
 
-/** Maps a position on the assembled timeline to the clip (and source-file offset) playing there. */
-export function locateActiveClip(clips: Clip[], globalSec: number): ActiveClipPosition | null {
-  let acc = 0
-  for (let i = 0; i < clips.length; i++) {
-    const clip = clips[i]
-    if (!clip) continue
-    const dur = clip.trimEndSec - clip.trimStartSec
-    if (globalSec >= acc && globalSec < acc + dur) {
-      return {
-        clip,
-        clipIndex: i,
-        sourceTimeSec: clip.trimStartSec + (globalSec - acc),
-        clipStartOffsetSec: acc
+/** Finds which video item is playing at a position on the assembled timeline. Tracks are
+ *  checked topmost-first (last in the array), so an overlapping item on a higher track wins —
+ *  there's no real compositing, just "whichever layer is in front is what's shown." */
+export function locateActiveVideoItem(tracks: Track[], globalSec: number): ActiveVideoItem | null {
+  for (let i = tracks.length - 1; i >= 0; i--) {
+    const track = tracks[i]
+    if (!track) continue
+    for (const item of track.items) {
+      if (item.kind !== 'video') continue
+      const durationSec = item.trimEndSec - item.trimStartSec
+      if (globalSec >= item.startSec && globalSec < item.startSec + durationSec) {
+        return {
+          item,
+          trackId: track.id,
+          sourceTimeSec: item.trimStartSec + (globalSec - item.startSec)
+        }
       }
     }
-    acc += dur
   }
-  const lastIndex = clips.length - 1
-  const last = clips[lastIndex]
-  if (!last) return null
-  const lastDur = last.trimEndSec - last.trimStartSec
-  return {
-    clip: last,
-    clipIndex: lastIndex,
-    sourceTimeSec: last.trimEndSec,
-    clipStartOffsetSec: acc - lastDur
+
+  // Past the very end of the whole timeline, freeze on the last frame of whichever
+  // topmost item ends last — avoids a flash of "nothing" right at the tail.
+  let fallback: { item: VideoTrackItem; trackId: string; endSec: number } | null = null
+  for (let i = tracks.length - 1; i >= 0; i--) {
+    const track = tracks[i]
+    if (!track) continue
+    for (const item of track.items) {
+      if (item.kind !== 'video') continue
+      const endSec = item.startSec + (item.trimEndSec - item.trimStartSec)
+      if (!fallback || endSec > fallback.endSec) {
+        fallback = { item, trackId: track.id, endSec }
+      }
+    }
   }
+  if (!fallback || globalSec < fallback.endSec) return null
+  return { item: fallback.item, trackId: fallback.trackId, sourceTimeSec: fallback.item.trimEndSec }
 }
