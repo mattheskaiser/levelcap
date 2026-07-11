@@ -47,14 +47,14 @@ function RightPanel(state: RightPanelProps): React.JSX.Element {
 
       {activeRightTab === 'audio' && (
         <AudioTab
-          clips={state.timelineClips}
+          clips={state.videoItems}
           selectedClipIds={state.selectedClipIds}
           onToggleClipSelection={state.toggleClipSelection}
           normalizeStatus={state.normalizeStatus}
           onRunNormalize={state.runNormalize}
           musicTab={state.musicTab}
           onSetMusicTab={state.setMusicTab}
-          tracks={state.tracks}
+          tracks={state.musicLibraryTracks}
           selectedTrackId={state.selectedTrackId}
           previewingId={state.previewingId}
           uploadIsSelected={state.uploadIsSelected}
@@ -70,7 +70,7 @@ function RightPanel(state: RightPanelProps): React.JSX.Element {
 
       {activeRightTab === 'fade' && (
         <FadeTab
-          clips={state.timelineClips}
+          clips={state.videoItems}
           selectedClipIds={state.selectedClipIds}
           onToggleClipSelection={state.toggleClipSelection}
           orderedSelectedPair={state.orderedSelectedPair}

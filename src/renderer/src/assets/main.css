@@ -426,6 +426,30 @@ button {
   border: 1px solid var(--success);
 }
 
+.player__caption-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.player__caption-line {
+  max-width: 100%;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 3px 10px;
+  border-radius: 4px;
+}
+
 .player__scrubbar {
   flex: none;
   height: 14px;
@@ -553,7 +577,7 @@ button {
 
 .timeline__track-headers {
   flex: none;
-  width: 56px;
+  width: 108px;
   display: flex;
   flex-direction: column;
 }
@@ -567,26 +591,61 @@ button {
   flex: none;
   display: flex;
   align-items: center;
-  font-size: 10px;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--panel-alt);
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
   color: var(--ev-c-text-3);
 }
 
-.timeline__track-header:nth-child(2) {
-  height: 30px;
-  margin-top: 4px;
+.timeline__track-header-handle {
+  flex: none;
+  cursor: grab;
+  touch-action: none;
+  color: rgba(235, 235, 245, 0.35);
 }
 
-.timeline__track-header:nth-child(3) {
-  height: 92px;
-  margin-top: 4px;
+.timeline__track-header-handle:hover {
+  color: var(--ev-c-text-1);
 }
 
-.timeline__track-header:nth-child(4) {
-  height: 30px;
-  margin-top: 4px;
+.timeline__track-header-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline__track-header-remove {
+  flex: none;
+  opacity: 0.5;
+}
+
+.timeline__track-header-remove:hover {
+  opacity: 1;
+  background: var(--danger);
+  color: #fff;
+}
+
+.timeline__add-track-btn {
+  flex: none;
+  margin-top: 6px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.14);
+  background: none;
+  color: rgba(235, 235, 245, 0.6);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.timeline__add-track-btn:hover {
+  border-color: var(--accent);
+  color: var(--ev-c-text-1);
 }
 
 .timeline__scrubber-viewport {
@@ -619,6 +678,12 @@ button {
   background: var(--border-soft);
 }
 
+.timeline__tick--minor {
+  top: auto;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
 .timeline__tick-label {
   position: absolute;
   top: 2px;
@@ -629,28 +694,17 @@ button {
   white-space: nowrap;
 }
 
-.timeline__captions-row {
+.timeline__track-row {
   flex: none;
-  height: 30px;
   margin-top: 4px;
   position: relative;
+  border-radius: 6px;
+  transition: background-color 0.12s;
 }
 
-.timeline__clips-row {
-  flex: none;
-  height: 92px;
-  margin-top: 4px;
-  display: flex;
-  align-items: center;
-}
-
-.timeline__audio-row {
-  flex: none;
-  height: 30px;
-  margin-top: 4px;
-  position: relative;
-  display: flex;
-  align-items: center;
+.timeline__track-row--drop-target {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .timeline__junction-marker {
@@ -731,59 +785,30 @@ button {
   touch-action: none;
 }
 
-.timeline__audio-block {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 0;
-  border-radius: 6px;
-  background: rgba(94, 196, 140, 0.18);
-  border: 1.5px solid var(--success);
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
-  overflow: hidden;
-}
-
-.timeline__audio-block-name {
-  font-size: 11px;
-  color: var(--ev-c-text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.timeline__audio-empty {
-  font-size: 11px;
-  color: rgba(235, 235, 245, 0.32);
-  padding-left: 2px;
-}
-
 .timeline-clip {
-  position: relative;
-  flex: none;
-  height: 92px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 8px;
   border-radius: 10px;
   cursor: grab;
-  background: var(--card);
+  background: #000;
   border: 1.5px solid var(--border-soft);
   overflow: hidden;
-  transition:
-    border-color 0.12s,
-    opacity 0.12s;
+  touch-action: none;
+  transition: border-color 0.12s;
+}
+
+.timeline-clip--moving {
+  opacity: 0.7;
+  z-index: 4;
+  cursor: grabbing;
 }
 
 .timeline-clip--selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent) inset;
-}
-
-.timeline-clip--drag-over {
-  border-color: var(--accent);
 }
 
 .timeline-clip--active::before {
@@ -832,53 +857,65 @@ button {
   background: var(--accent);
 }
 
-.timeline-clip__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.timeline-clip__order {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ev-c-text-3);
-}
-
-.timeline-clip__norm-badge {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--success);
-  letter-spacing: 0.03em;
-}
-
-.timeline-clip__thumb {
+.timeline-clip__filmstrip {
+  position: relative;
   flex: 1;
   min-height: 0;
-  border-radius: 5px;
   overflow: hidden;
-  background: #000;
 }
 
-.timeline-clip__thumb video {
+.timeline-clip__waveform {
+  flex: none;
+  height: 34px;
+  background: rgba(94, 196, 140, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* width must match FRAME_WIDTH_PX in TimelinePanel.tsx */
+.timeline-clip__frame {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 64px;
+  overflow: hidden;
+}
+
+.timeline-clip__frame video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   pointer-events: none;
 }
 
-.timeline-clip__name {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: var(--ev-c-text-1);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.timeline-clip__norm-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0f1a12;
+  background: var(--success);
 }
 
 .timeline-clip__duration {
-  font-size: 11px;
-  color: var(--ev-c-text-2);
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  z-index: 2;
+  font-size: 10.5px;
+  color: #fff;
   font-family: 'JetBrains Mono', monospace;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 1px 5px;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 .timeline__empty {

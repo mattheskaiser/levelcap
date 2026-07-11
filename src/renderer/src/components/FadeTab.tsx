@@ -26,26 +26,24 @@ function FadeTab({
   const pairKey = fadeSelectable ? junctionKey(fadeA, fadeB) : null
   const pairHasFade = !!pairKey && fadeJunctions.includes(pairKey)
 
-  const idxA = fadeSelectable ? clips.findIndex((c) => c.id === fadeA) : -1
-  const idxB = fadeSelectable ? clips.findIndex((c) => c.id === fadeB) : -1
-  const fadeActionLabel = fadeSelectable ? `Fade between Clip ${idxA + 1} and Clip ${idxB + 1}` : ''
+  const nameA = fadeSelectable ? clips.find((c) => c.id === fadeA)?.name : undefined
+  const nameB = fadeSelectable ? clips.find((c) => c.id === fadeB)?.name : undefined
+  const fadeActionLabel = fadeSelectable ? `Fade between ${nameA} and ${nameB}` : ''
 
   const activeFades = fadeJunctions.map((key) => {
     const [idA, idB] = key.split('__')
-    const clipIdxA = clips.findIndex((c) => c.id === idA)
-    const clipIdxB = clips.findIndex((c) => c.id === idB)
+    const nameFor = (id: string | undefined): string => clips.find((c) => c.id === id)?.name ?? '?'
     return {
       key,
-      label: `${clipIdxA >= 0 ? `Clip ${clipIdxA + 1}` : '?'} → ${
-        clipIdxB >= 0 ? `Clip ${clipIdxB + 1}` : '?'
-      }`
+      label: `${nameFor(idA)} → ${nameFor(idB)}`
     }
   })
 
   return (
     <div className="right-tab">
       <p className="right-tab__hint right-tab__hint--lead">
-        Select two neighboring clips below (or on the timeline) to add a fade-to-black between them.
+        Select two clips on the same track that touch end-to-end to add a fade-to-black between
+        them.
       </p>
 
       <ClipPickerList
@@ -67,8 +65,8 @@ function FadeTab({
       ) : (
         <p className="right-tab__hint">
           {selectedClipIds.length === 2
-            ? 'Selected clips must be next to each other on the timeline.'
-            : 'Select exactly two neighboring clips.'}
+            ? 'Selected clips must be on the same track and touching, with no gap between them.'
+            : 'Select exactly two clips.'}
         </p>
       )}
 

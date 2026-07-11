@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import type { DisplayClip } from '../types'
-import { formatClipTime } from '../utils/format'
-import { locateActiveClip, toMediaUrl } from '../utils/media'
+import type { Track } from '@shared/types'
+import { textItemsAcrossTracks } from '@shared/tracks'
+import { basename, formatClipTime } from '../utils/format'
+import { locateActiveVideoItem, toMediaUrl } from '../utils/media'
 
 const SEEK_EPSILON_SEC = 0.35
 
@@ -11,7 +12,7 @@ interface TrimPreview {
 }
 
 interface PlayerPanelProps {
-  clips: DisplayClip[]
+  tracks: Track[]
   currentSec: number
   totalDurationSec: number
   isPlaying: boolean
@@ -22,7 +23,7 @@ interface PlayerPanelProps {
 }
 
 function PlayerPanel({
-  clips,
+  tracks,
   currentSec,
   totalDurationSec,
   isPlaying,
@@ -33,24 +34,27 @@ function PlayerPanel({
 }: PlayerPanelProps): React.JSX.Element {
   const playerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const loadedClipIdRef = useRef<string | null>(null)
+  const loadedItemIdRef = useRef<string | null>(null)
   const trimPreviewUrlRef = useRef<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  const active = locateActiveClip(clips, currentSec)
+  const active = locateActiveVideoItem(tracks, currentSec)
+  const activeCaptions = textItemsAcrossTracks(tracks).filter(
+    (c) => currentSec >= c.startSec && currentSec < c.endSec
+  )
 
-  // Swap the video source when playback crosses into a different clip.
+  // Swap the video source when playback crosses into a different item.
   useEffect(() => {
     if (trimPreview) return
     const video = videoRef.current
     if (!video || !active) return
-    if (loadedClipIdRef.current === active.clip.id) return
-    loadedClipIdRef.current = active.clip.id
-    video.src = toMediaUrl(active.clip.sourcePath)
+    if (loadedItemIdRef.current === active.item.id) return
+    loadedItemIdRef.current = active.item.id
+    video.src = toMediaUrl(active.item.sourcePath)
     video.currentTime = active.sourceTimeSec
     if (isPlaying) void video.play()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.clip.id, trimPreview])
+  }, [active?.item.id, trimPreview])
 
   // Seek when the playhead moves from something other than our own timeupdate (e.g. scrubbing).
   useEffect(() => {
@@ -88,8 +92,8 @@ function PlayerPanel({
     } else if (trimPreviewUrlRef.current !== null) {
       trimPreviewUrlRef.current = null
       if (active) {
-        loadedClipIdRef.current = active.clip.id
-        video.src = toMediaUrl(active.clip.sourcePath)
+        loadedItemIdRef.current = active.item.id
+        video.src = toMediaUrl(active.item.sourcePath)
         video.currentTime = active.sourceTimeSec
         if (isPlaying) void video.play()
       }
@@ -134,13 +138,13 @@ function PlayerPanel({
   function handleTimeUpdate(): void {
     const video = videoRef.current
     if (!video || !active) return
-    if (video.currentTime >= active.clip.trimEndSec) {
-      const endOfClipGlobalSec =
-        active.clipStartOffsetSec + (active.clip.trimEndSec - active.clip.trimStartSec)
-      onPlaybackTimeUpdate(endOfClipGlobalSec)
+    if (video.currentTime >= active.item.trimEndSec) {
+      const endOfItemGlobalSec =
+        active.item.startSec + (active.item.trimEndSec - active.item.trimStartSec)
+      onPlaybackTimeUpdate(endOfItemGlobalSec)
       return
     }
-    onPlaybackTimeUpdate(active.clipStartOffsetSec + (video.currentTime - active.clip.trimStartSec))
+    onPlaybackTimeUpdate(active.item.startSec + (video.currentTime - active.item.trimStartSec))
   }
 
   return (
@@ -156,10 +160,19 @@ function PlayerPanel({
         ) : (
           <span className="player__preview-label">Add clips to the timeline to preview</span>
         )}
+        {activeCaptions.length > 0 && (
+          <div className="player__caption-overlay">
+            {activeCaptions.map((c) => (
+              <div key={c.id} className="player__caption-line">
+                {c.text}
+              </div>
+            ))}
+          </div>
+        )}
         {trimPreview ? (
           <span className="player__clip-label player__clip-label--trim">Trimming…</span>
         ) : (
-          active && <span className="player__clip-label">Clip {active.clipIndex + 1}</span>
+          active && <span className="player__clip-label">{basename(active.item.sourcePath)}</span>
         )}
       </div>
       <div

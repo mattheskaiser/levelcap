@@ -8,8 +8,8 @@ import TimelinePanel from './TimelinePanel'
 import { useEditorState } from '../hooks/useEditorState'
 import { formatClipTime } from '../utils/format'
 
-const DEFAULT_TIMELINE_HEIGHT = 300
-const MIN_TIMELINE_HEIGHT = 180
+const DEFAULT_TIMELINE_HEIGHT = 340
+const MIN_TIMELINE_HEIGHT = 220
 const MAX_TIMELINE_HEIGHT = 560
 
 interface EditorWorkspaceProps {
@@ -28,9 +28,7 @@ function EditorWorkspace({ project, onBack }: EditorWorkspaceProps): React.JSX.E
   const resizeStartRef = useRef<{ clientY: number; height: number } | null>(null)
   const [trimPreview, setTrimPreview] = useState<TrimPreview | null>(null)
 
-  const clipCountLabel = `${state.timelineClips.length} ${
-    state.timelineClips.length === 1 ? 'clip' : 'clips'
-  }`
+  const clipCountLabel = `${state.videoItems.length} ${state.videoItems.length === 1 ? 'clip' : 'clips'}`
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>): void {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -77,7 +75,7 @@ function EditorWorkspace({ project, onBack }: EditorWorkspaceProps): React.JSX.E
           />
 
           <PlayerPanel
-            clips={state.timelineClips}
+            tracks={state.tracks}
             currentSec={state.currentSec}
             totalDurationSec={state.totalDurationSec}
             isPlaying={state.isPlaying}
@@ -99,11 +97,9 @@ function EditorWorkspace({ project, onBack }: EditorWorkspaceProps): React.JSX.E
 
         <TimelinePanel
           heightPx={timelineHeight}
-          clips={state.timelineClips}
+          tracks={state.tracks}
           selectedClipIds={state.selectedClipIds}
           activeClipId={state.activeClipId}
-          draggingClipId={state.draggingClipId}
-          dragOverClipId={state.dragOverClipId}
           fadeJunctions={state.fadeJunctions}
           normalizedIds={state.normalizedIds}
           clipCountLabel={clipCountLabel}
@@ -112,16 +108,19 @@ function EditorWorkspace({ project, onBack }: EditorWorkspaceProps): React.JSX.E
           totalDurationSec={state.totalDurationSec}
           onScrub={state.onScrub}
           onSelectClip={state.selectClip}
-          onClipDragStart={state.setDraggingClipId}
-          onClipDragOver={state.setDragOverClipId}
-          onClipDrop={(targetId) => {
-            if (state.draggingClipId) state.reorderClips(state.draggingClipId, targetId)
-            state.setDraggingClipId(null)
-            state.setDragOverClipId(null)
-          }}
-          onClipDragEnd={() => {
-            state.setDraggingClipId(null)
-            state.setDragOverClipId(null)
+          onResizeVideoItem={state.resizeVideoItem}
+          onTrimPreview={setTrimPreview}
+          onMoveCaption={state.moveCaption}
+          onMoveItemWithinTrack={state.moveItemWithinTrack}
+          onMoveItemToTrack={state.moveItemToTrack}
+          onAddTrack={state.addTrack}
+          onRemoveTrack={state.removeTrack}
+          onReorderTracks={state.reorderTracks}
+          onDropBinItem={(trackId, startSec) => {
+            if (state.draggingBinId) {
+              state.addBinItemToTimeline(state.draggingBinId, trackId, startSec)
+              state.setDraggingBinId(null)
+            }
           }}
           onTimelineDrop={() => {
             if (state.draggingBinId) {
@@ -129,11 +128,6 @@ function EditorWorkspace({ project, onBack }: EditorWorkspaceProps): React.JSX.E
               state.setDraggingBinId(null)
             }
           }}
-          onResizeClip={state.resizeClip}
-          onTrimPreview={setTrimPreview}
-          captions={state.captions}
-          onMoveCaption={state.moveCaption}
-          selectedMusicTrack={state.selectedMusicTrack}
         />
       </div>
     </div>
