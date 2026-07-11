@@ -1,4 +1,4 @@
-# Rushcut — Plan
+# Levelcap — Plan
 
 Local desktop tool for a single workflow: take one already-edited ~20-minute
 video (cut together in CapCut from many clips, some quiet, some loud, some
@@ -40,7 +40,7 @@ file.
 - `src/preload` — thin typed bridge (`window.api`), no business logic.
 - `src/renderer` — React UI, everything goes through `window.api`.
 - `src/shared` — `types.ts` (`SourceVideo`, `Segment`, `PipelineProgressEvent`,
-  `ExportResult`) + `ipc.ts` (the `RushcutApi` contract), imported via
+  `ExportResult`) + `ipc.ts` (the `LevelcapApi` contract), imported via
   `@shared/*`.
 
 **Main-process modules**

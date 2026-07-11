@@ -1,6 +1,6 @@
 import type { ExportResult, PipelineProgressEvent, Segment, SourceVideo } from './types'
 
-export interface RushcutApi {
+export interface LevelcapApi {
   /** Opens a native file picker filtered to video files, probes, and returns the selected video. */
   selectVideo(): Promise<SourceVideo | null>
   /** Resolves the absolute filesystem path for a File dropped onto the window. */

@@ -35,7 +35,7 @@ export async function transcribeAudio(
     )
   }
 
-  const outBase = join(app.getPath('temp'), `rushcut-whisper-${randomUUID()}`)
+  const outBase = join(app.getPath('temp'), `levelcap-whisper-${randomUUID()}`)
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(

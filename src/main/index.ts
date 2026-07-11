@@ -52,10 +52,10 @@ function createWindow(): void {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.levelcap.app')
 
   // Electron's default menu binds Ctrl+Plus/Ctrl+Minus/Ctrl+0 to whole-window zoom,
-  // which fights with the timeline's own zoom shortcuts — drop the menu entirely.
+  // which fights with the app's own zoom shortcuts — drop the menu entirely.
   Menu.setApplicationMenu(null)
 
   // Default open or close DevTools by F12 in development

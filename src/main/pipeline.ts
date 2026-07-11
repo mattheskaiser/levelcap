@@ -29,7 +29,7 @@ export async function runPipeline(
   video: SourceVideo,
   onProgress: (event: PipelineProgressEvent) => void
 ): Promise<void> {
-  const workDir = join(app.getPath('temp'), 'rushcut', randomUUID())
+  const workDir = join(app.getPath('temp'), 'levelcap', randomUUID())
   await mkdir(workDir, { recursive: true })
   const wavPath = join(workDir, 'audio.wav')
   const normalizedPath = join(workDir, 'normalized.mp4')

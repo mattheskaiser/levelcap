@@ -27,7 +27,7 @@ function UploadScreen({
 
   return (
     <div className="upload-screen">
-      <div className="upload-screen__brand">Rushcut</div>
+      <div className="upload-screen__brand">Levelcap</div>
       <div
         className={`upload-dropzone${isDragging ? ' upload-dropzone--active' : ''}`}
         onDragOver={(e) => {

@@ -1,11 +1,11 @@
 import { randomUUID } from 'crypto'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { RushcutApi } from '@shared/ipc'
+import type { LevelcapApi } from '@shared/ipc'
 import type { ExportResult, PipelineProgressEvent, Segment } from '@shared/types'
 
 // Custom APIs for renderer
-const api: RushcutApi = {
+const api: LevelcapApi = {
   selectVideo: () => ipcRenderer.invoke('video:select'),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   importVideoFromPath: (filePath) => ipcRenderer.invoke('video:importPath', filePath),

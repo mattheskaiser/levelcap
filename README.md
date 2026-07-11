@@ -1,6 +1,8 @@
-# rushcut
+# levelcap
 
-An Electron application with React and TypeScript
+Transcribe, normalize, and generate CapCut-ready subtitles for an
+already-edited video. See [PLAN.md](PLAN.md) for the pipeline and
+architecture.
 
 ## Recommended IDE Setup
 
